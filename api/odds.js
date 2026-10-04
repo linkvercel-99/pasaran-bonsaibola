@@ -5,30 +5,55 @@ const API_BASE = 'https://api.the-odds-api.com/v4/sports';
 const REGIONS = process.env.ODDS_REGIONS || 'eu';
 const MARKETS = process.env.ODDS_MARKETS || 'h2h,spreads,totals';
 const CACHE_SECONDS = Math.max(60, parseInt(process.env.CACHE_SECONDS, 10) || 3600); // cache CDN Vercel
+const MAX_LEAGUES = Math.max(1, parseInt(process.env.MAX_LEAGUES, 10) || 25); // batas jumlah liga per refresh (hemat kuota)
+const WINDOW_DAYS = 7; // data yang dikirim ke browser: sekarang sampai +7 hari
 const TZ = 'Asia/Jakarta';
 
-// keys: sport key The Odds API (bisa lebih dari satu sebagai alias). Urutan array = urutan tampil.
-// group: harus sama dengan pill filter di index.html ('Lainnya' = hanya muncul di "Semua Liga").
+// Metadata liga yang dikenal: nama, negara, grup pill filter, dan urutan tampil.
+// Daftar ini TIDAK membatasi: semua liga sepak bola yang aktif di The Odds API ikut dimuat otomatis (lihat fetchLive).
+// group harus sama dengan pill di index.html ('Lainnya' = hanya muncul di "Semua Liga").
 const L = (keys, name, country, group = 'Lainnya') => ({ keys: [].concat(keys), name, country, group });
 const LEAGUES = [
-  // Eropa
   L('soccer_epl', 'Premier League', 'Inggris', 'Premier League'),
+  L('soccer_efl_champ', 'Championship', 'Inggris'),
+  L('soccer_england_league1', 'League One', 'Inggris'),
   L('soccer_spain_la_liga', 'La Liga', 'Spanyol', 'La Liga'),
+  L('soccer_spain_segunda_division', 'La Liga 2', 'Spanyol'),
   L('soccer_italy_serie_a', 'Serie A', 'Italia', 'Serie A'),
+  L('soccer_italy_serie_b', 'Serie B', 'Italia'),
   L('soccer_germany_bundesliga', 'Bundesliga', 'Jerman', 'Bundesliga'),
+  L('soccer_germany_bundesliga2', 'Bundesliga 2', 'Jerman'),
   L('soccer_france_ligue_one', 'Ligue 1', 'Prancis'),
+  L('soccer_france_ligue_two', 'Ligue 2', 'Prancis'),
   L('soccer_uefa_champs_league', 'Champions League', 'Eropa', 'Champions League'),
   L('soccer_uefa_europa_league', 'Europa League', 'Eropa'),
-  // Asia & regional (alias kedua = penulisan key yang umum dipakai The Odds API)
+  L('soccer_uefa_europa_conf_league', 'Conference League', 'Eropa'),
+  L('soccer_uefa_nations_league', 'Nations League', 'Eropa'),
+  L('soccer_netherlands_eredivisie', 'Eredivisie', 'Belanda'),
+  L('soccer_portugal_primeira_liga', 'Primeira Liga', 'Portugal'),
+  L('soccer_belgium_first_div', 'Pro League', 'Belgia'),
+  L('soccer_turkey_super_league', 'Super Lig', 'Turki'),
+  L('soccer_spl', 'Scottish Premiership', 'Skotlandia'),
   L('soccer_japan_j_league', 'J-League', 'Jepang', 'Liga Asia'),
-  L(['soccer_korea_k_league', 'soccer_korea_kleague1'], 'K League', 'Korea Selatan', 'Liga Asia'),
-  L(['soccer_china_super_league', 'soccer_china_superleague'], 'Chinese Super League', 'China', 'Liga Asia'),
+  L(['soccer_korea_kleague1', 'soccer_korea_k_league'], 'K League', 'Korea Selatan', 'Liga Asia'),
+  L(['soccer_china_superleague', 'soccer_china_super_league'], 'Chinese Super League', 'China', 'Liga Asia'),
   L('soccer_australia_aleague', 'A-League', 'Australia', 'Liga Asia'),
-  L(['soccer_saudi_pro_league', 'soccer_saudi_arabia_pro_league'], 'Saudi Pro League', 'Arab Saudi', 'Liga Asia'),
-  // Amerika
+  L(['soccer_saudi_arabia_pro_league', 'soccer_saudi_pro_league'], 'Saudi Pro League', 'Arab Saudi', 'Liga Asia'),
   L('soccer_usa_mls', 'MLS', 'Amerika Serikat'),
-  L('soccer_brazil_campeonato', 'Brasileirão', 'Brasil')
+  L('soccer_brazil_campeonato', 'Brasileirão', 'Brasil'),
+  L('soccer_mexico_ligamx', 'Liga MX', 'Meksiko'),
+  L('soccer_argentina_primera_division', 'Liga Argentina', 'Argentina'),
+  L('soccer_conmebol_copa_libertadores', 'Copa Libertadores', 'Amerika Selatan'),
+  L('soccer_conmebol_copa_sudamericana', 'Copa Sudamericana', 'Amerika Selatan')
 ];
+
+// Liga yang tidak ada di daftar di atas: pakai judul dari The Odds API; key Asia masuk pill "Liga Asia"
+const ASIA = /japan|korea|china|australia|saudi|thailand|indonesia|malaysia|india|uae|qatar|iran|uzbekistan|vietnam|afc/i;
+function cfgFor(s, i) {
+  const k = LEAGUES.findIndex(c => c.keys.includes(s.key));
+  if (k >= 0) return { cfg: LEAGUES[k], order: k };
+  return { cfg: { name: s.title || s.key, country: '', group: ASIA.test(s.key) ? 'Liga Asia' : 'Lainnya' }, order: LEAGUES.length + i };
+}
 
 /* ---------- The Odds API ---------- */
 async function apiError(res) {
@@ -39,11 +64,11 @@ async function apiError(res) {
   return e;
 }
 
-// Daftar sport yang sedang aktif (endpoint ini tidak memakai kuota odds)
-async function activeKeySet(apiKey) {
+// Semua liga sepak bola yang sedang aktif (endpoint /sports tidak memakai kuota odds)
+async function activeSoccer(apiKey) {
   const res = await fetch(`${API_BASE}?${new URLSearchParams({ apiKey })}`);
   if (!res.ok) throw await apiError(res);
-  return new Set((await res.json()).filter(s => s.active).map(s => s.key));
+  return (await res.json()).filter(s => s.active && s.key.startsWith('soccer_') && !s.has_outrights && !/winner/.test(s.key));
 }
 
 async function oddsGet(apiKey, sportKey) {
@@ -104,17 +129,20 @@ function mapEvent(ev, cfg, order) {
   };
 }
 
-// Ambil semua liga aktif sekaligus; satu liga gagal/kosong tidak membatalkan yang lain
+// Ambil semua liga aktif sekaligus (maks. MAX_LEAGUES); satu liga gagal/kosong tidak membatalkan yang lain
 async function fetchLive(apiKey) {
-  const active = await activeKeySet(apiKey);
-  const tasks = [], inactive = [];
-  LEAGUES.forEach((cfg, order) => cfg.keys.forEach(k => (active.has(k) ? tasks.push({ k, cfg, order }) : inactive.push(k))));
+  const soccer = await activeSoccer(apiKey);
+  const rank = s => { const i = LEAGUES.findIndex(c => c.keys.includes(s.key)); return i < 0 ? 999 : i; };
+  soccer.sort((a, b) => rank(a) - rank(b) || (a.title || '').localeCompare(b.title || '')); // liga besar didahulukan
 
-  const results = await Promise.allSettled(tasks.map(t => oddsGet(apiKey, t.k)));
+  const tasks = soccer.slice(0, MAX_LEAGUES).map((s, i) => ({ key: s.key, ...cfgFor(s, i) }));
+  const inactive = soccer.slice(MAX_LEAGUES).map(s => s.key); // aktif tapi tidak dimuat (kena batas MAX_LEAGUES)
+
+  const results = await Promise.allSettled(tasks.map(t => oddsGet(apiKey, t.key)));
   const failed = results.filter(r => r.status === 'rejected').map(r => r.reason);
   if (tasks.length && failed.length === tasks.length) throw failed[0];
 
-  const from = Date.now() - 3 * 36e5, to = Date.now() + 4 * 864e5; // jendela data: -3 jam s/d +4 hari
+  const from = Date.now() - 3 * 36e5, to = Date.now() + WINDOW_DAYS * 864e5;
   const seen = new Set(), events = [];
   results.forEach((r, i) => {
     if (r.status !== 'fulfilled') return;
