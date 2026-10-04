@@ -82,6 +82,8 @@ const state = { day: 0, league: 'Semua Liga', q: '', data: {}, demo: false, noti
 async function fetchData() {
   const res = await fetch('/api/odds', { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error('HTTP ' + res.status);
+  if (!(res.headers.get('content-type') || '').includes('json'))
+    throw new Error('/api/odds tidak berjalan sebagai Serverless Function. Pastikan folder api/ ada di root proyek');
   return res.json();
 }
 
@@ -91,6 +93,7 @@ async function loadDay(off) {
     if (!state.req) state.req = fetchData();
     const p = await state.req;
     const events = p.events || [];
+    state.all = events;
     DAY_LABELS.forEach((_, o) => {
       state.data[o] = events.filter(m => new Date(m.ts).toLocaleDateString('en-CA', { timeZone: TZ }) === dateStr(o));
     });
@@ -192,7 +195,12 @@ function renderList() {
 
   const ms = visible();
   if (!ms.length) {
-    $('#list').innerHTML = `<div class="rounded-xl border border-line bg-card p-8 text-center text-sm text-mute">Tidak ada pertandingan. Ubah tanggal, liga, atau kata kunci pencarian.</div>`;
+    const cur = dateStr(state.day);
+    const next = (state.all || []).find(m => m.ts > Date.now()
+      && (state.league === 'Semua Liga' || m.group === state.league)
+      && new Date(m.ts).toLocaleDateString('en-CA', { timeZone: TZ }) > cur);
+    const hint = next ? `<p class="mt-2 text-xs">Pertandingan berikutnya: ${new Date(next.ts).toLocaleDateString('id-ID', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })}</p>` : '';
+    $('#list').innerHTML = `<div class="rounded-xl border border-line bg-card p-8 text-center text-sm text-mute">Tidak ada pertandingan. Ubah tanggal, liga, atau kata kunci pencarian.${hint}</div>`;
     return;
   }
   const groups = {};
