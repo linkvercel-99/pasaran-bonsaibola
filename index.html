@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#142811">
+<title>Bonsai Bola – Pasaran Bola Hari Ini</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = { theme: { extend: {
+  fontFamily: { sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif'] },
+  colors: { bg: '#142811', card: '#0a1408', card2: '#183215', line: '#1f3d1b', lime: '#4ade80', mute: '#9ca3af' }
+}}};
+</script>
+<style>
+  body { background:#142811; color:#fff; font-family:'Plus Jakarta Sans',Inter,system-ui,sans-serif; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .no-sb { scrollbar-width:none; } .no-sb::-webkit-scrollbar { display:none; }
+  .match { cursor:pointer; transition: background .15s; }
+  .match:hover { background:#102009; }
+  :focus-visible { outline:2px solid #4ade80; outline-offset:2px; }
+  .dot { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.25; } }
+  @media (prefers-reduced-motion: reduce) { .dot { animation:none; } }
+</style>
+</head>
+<body class="min-h-screen">
+
+<header class="sticky top-0 z-20 bg-bg/95 backdrop-blur border-b border-line">
+  <div class="max-w-4xl mx-auto px-3 pt-3 pb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+    <h1 class="shrink-0 flex items-center">
+      <img src="https://bonsaibola5.org/Images/logo.png" alt="Bonsai Bola" decoding="async"
+        class="h-9 w-auto max-w-[170px] object-contain sm:h-11 sm:max-w-[240px]"
+        onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'text-xl font-extrabold tracking-tight text-lime',textContent:'BONSAI BOLA'}))">
+    </h1>
+    <span class="ml-auto order-2 sm:order-3 inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 text-xs tnum">
+      <span class="text-mute">WIB</span><span id="clock" class="font-semibold">--:--:--</span>
+    </span>
+    <label class="order-3 sm:order-2 w-full sm:w-auto sm:flex-1 sm:max-w-xs sm:ml-auto">
+      <span class="sr-only">Cari tim atau liga</span>
+      <input id="q" type="search" placeholder="Cari tim atau liga" autocomplete="off"
+        class="w-full rounded-lg border border-line bg-card px-3 py-2 text-sm placeholder:text-mute focus:border-lime focus:outline-none">
+    </label>
+  </div>
+
+  <div class="max-w-4xl mx-auto px-3 pb-3 space-y-2">
+    <div id="days" class="grid grid-cols-3 gap-2" role="tablist" aria-label="Pilih tanggal"></div>
+    <div id="leagues" class="flex gap-2 overflow-x-auto no-sb -mx-3 px-3" aria-label="Pilih liga"></div>
+  </div>
+</header>
+
+<main class="max-w-4xl mx-auto px-3 py-4">
+  <div id="banner" class="hidden mb-3 rounded-lg border border-line bg-card2 px-3 py-2 text-xs text-mute"></div>
+  <div id="list" class="space-y-4" aria-live="polite"></div>
+  <p class="mt-8 text-center text-xs text-mute">Odds hanya sebagai informasi. Ketuk pertandingan untuk menyalin pasaran.</p>
+</main>
+
+<div id="toast" class="fixed left-1/2 bottom-6 z-30 -translate-x-1/2 translate-y-4 opacity-0 pointer-events-none transition rounded-full bg-lime px-4 py-2 text-sm font-semibold text-card shadow-lg max-w-[90vw] truncate" role="status"></div>
+
+<script>
+/* ================= KONFIGURASI ================= */
+const TZ = 'Asia/Jakarta';
+// Pill filter. Data liga (nama, negara, grup) datang dari server: api/odds.js
+const FILTERS = ['Semua Liga', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Liga Asia', 'Champions League'];
+const DAY_LABELS = ['Hari Ini', 'Besok', 'Lusa'];
+
+/* ================= HELPERS ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dateStr = off => new Date(Date.now() + off * 864e5).toLocaleDateString('en-CA', { timeZone: TZ });
+const fmtTime = ts => new Date(ts).toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+const fmtDate = off => new Date(Date.now() + off * 864e5).toLocaleDateString('id-ID', { timeZone: TZ, day: 'numeric', month: 'short' });
+const fmtHdp = (v, gives) => (v === 0 ? '0' : (gives ? '-' : '+') + v);
+
+const state = { day: 0, league: 'Semua Liga', q: '', data: {}, demo: false, notice: '', error: '', req: null };
+
+/* ================= DATA LAYER ================= */
+// Semua data diambil dari endpoint internal. API key hanya ada di server (api/odds.js).
+async function fetchData() {
+  const res = await fetch('/api/odds', { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function loadDay(off) {
+  if (state.data[off]) return;
+  try {
+    if (!state.req) state.req = fetchData();
+    const p = await state.req;
+    const events = p.events || [];
+    DAY_LABELS.forEach((_, o) => {
+      state.data[o] = events.filter(m => new Date(m.ts).toLocaleDateString('en-CA', { timeZone: TZ }) === dateStr(o));
+    });
+    state.demo = p.source === 'mock';
+    state.notice = p.notice || '';
+    state.error = '';
+  } catch (e) {
+    state.req = null;
+    state.error = 'Tidak bisa memuat data dari server (' + e.message + ').';
+  }
+}
+
+/* ================= STATUS ================= */
+function status(m) {
+  if (m.st) return m.st;
+  const diff = (Date.now() - m.ts) / 6e4;
+  if (diff >= 0 && diff <= 115) return { s: 'live', min: Math.min(90, Math.max(1, Math.round(diff))) };
+  if (diff > 115) return { s: 'ft' };
+  return { s: 'up' };
+}
+function statusHtml(m) {
+  const s = status(m);
+  if (s.s === 'live') return `<span class="inline-flex items-center gap-1 rounded bg-lime/15 px-1.5 py-0.5 text-[11px] font-bold text-lime"><span class="dot h-1.5 w-1.5 rounded-full bg-lime"></span>Live${s.min ? ' ' + s.min + "'" : ''}</span>`;
+  if (s.s === 'ft') return `<span class="text-[11px] text-mute">Selesai</span>`;
+  return `<span class="text-[11px] text-mute">Upcoming</span>`;
+}
+
+/* ================= RENDER ================= */
+function renderFilters() {
+  $('#days').innerHTML = DAY_LABELS.map((l, i) => `
+    <button role="tab" aria-selected="${state.day === i}" data-day="${i}"
+      class="rounded-lg border py-2 text-sm font-semibold transition ${state.day === i ? 'bg-lime border-lime text-card' : 'bg-card border-line text-white hover:border-lime/60'}">
+      ${l}<span class="block text-[11px] font-medium ${state.day === i ? 'text-card/70' : 'text-mute'}">${fmtDate(i)}</span>
+    </button>`).join('');
+  $('#leagues').innerHTML = FILTERS.map(l => `
+    <button data-league="${l}" aria-pressed="${state.league === l}"
+      class="shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-semibold transition ${state.league === l ? 'bg-lime border-lime text-card' : 'bg-card border-line text-white hover:border-lime/60'}">${l}</button>`).join('');
+}
+
+function teamRow(name, gives, val) {
+  return `<div class="flex items-center gap-2 min-w-0">
+    <span class="truncate text-[15px] font-semibold">${esc(name)}</span>
+    ${gives && val !== 0 ? `<span class="shrink-0 rounded bg-lime px-1.5 py-0.5 text-[11px] font-extrabold text-card tnum">${fmtHdp(val, true)}</span>` : ''}
+  </div>`;
+}
+
+function cell(label, main, sub) {
+  return `<div class="px-2 py-2 text-center">
+    <div class="text-[10px] text-mute">${label}</div>
+    <div class="text-sm font-bold tnum">${main}</div>
+    ${sub ? `<div class="truncate text-[10px] text-mute">${sub}</div>` : ''}
+  </div>`;
+}
+
+function matchHtml(m) {
+  const hasH = m.hdp !== null && m.hdp !== undefined;
+  const hg = m.side === 'h';
+  const giver = hg ? m.home : m.away;
+  const hdpCell = hasH ? cell('HDP', `<span class="text-lime">${fmtHdp(m.hdp, true)}</span>`, esc(giver)) : cell('HDP', '-', '');
+  const ouCell = cell('O/U', m.ou ? esc(m.ou) : '-', '');
+  const min = Math.min(...m.odds.filter(Boolean));
+  const oddsCell = `<div class="px-2 py-2 text-center">
+    <div class="grid grid-cols-3 text-[10px] text-mute"><span>1</span><span>X</span><span>2</span></div>
+    <div class="grid grid-cols-3 text-sm font-bold tnum">${m.odds.map(o => `<span class="${o && o === min ? 'text-lime' : ''}">${o ? o.toFixed(2) : '-'}</span>`).join('')}</div>
+  </div>`;
+  return `<div class="match sm:flex sm:items-center border-t border-line first:border-t-0" role="button" tabindex="0" data-id="${m.id}" aria-label="Salin pasaran ${esc(m.home)} vs ${esc(m.away)}">
+    <div class="flex items-center gap-3 px-3 pt-3 sm:py-3 sm:flex-1 min-w-0">
+      <div class="w-14 shrink-0 text-center space-y-0.5">
+        <div class="text-sm font-bold tnum">${fmtTime(m.ts)}</div>${statusHtml(m)}
+      </div>
+      <div class="min-w-0 flex-1 space-y-1">${teamRow(m.home, hasH && hg, m.hdp)}${teamRow(m.away, hasH && !hg, m.hdp)}</div>
+    </div>
+    <div class="mt-2 sm:mt-0 grid grid-cols-[1fr_1fr_1.7fr] divide-x divide-line border-t border-line sm:border-t-0 sm:w-[340px] sm:shrink-0">
+      ${hdpCell}${ouCell}${oddsCell}
+    </div>
+  </div>`;
+}
+
+function visible() {
+  const q = state.q.trim().toLowerCase();
+  return (state.data[state.day] || [])
+    .filter(m => state.league === 'Semua Liga' || m.group === state.league)
+    .filter(m => !q || [m.home, m.away, m.league].some(t => t.toLowerCase().includes(q)))
+    .sort((a, b) => a.ts - b.ts);
+}
+
+function renderList() {
+  const b = $('#banner');
+  if (state.error) {
+    b.classList.add('hidden');
+    $('#list').innerHTML = `<div class="rounded-xl border border-line bg-card p-8 text-center text-sm">
+      <p class="text-mute">${esc(state.error)}</p>
+      <p class="mt-1 text-xs text-mute">Jika dijalankan lokal, gunakan <code>vercel dev</code>, bukan membuka file langsung.</p>
+      <button data-retry class="mt-4 rounded-lg bg-lime px-4 py-2 font-semibold text-card">Coba lagi</button></div>`;
+    return;
+  }
+  b.classList.toggle('hidden', !(state.demo || state.notice));
+  b.textContent = state.notice || 'Mode demo: menampilkan data contoh.';
+
+  const ms = visible();
+  if (!ms.length) {
+    $('#list').innerHTML = `<div class="rounded-xl border border-line bg-card p-8 text-center text-sm text-mute">Tidak ada pertandingan. Ubah tanggal, liga, atau kata kunci pencarian.</div>`;
+    return;
+  }
+  const groups = {};
+  ms.forEach(m => (groups[m.league] = groups[m.league] || []).push(m));
+  const order = Object.keys(groups).sort((x, y) => groups[x][0].order - groups[y][0].order);
+  $('#list').innerHTML = order.map(l => `
+    <section class="overflow-hidden rounded-xl border border-line bg-card">
+      <div class="flex items-center justify-between bg-card2 border-b-2 border-lime px-3 py-2">
+        <h2 class="text-sm font-bold">${esc(l)}<span class="ml-2 text-xs font-medium text-mute">${esc(groups[l][0].country || '')}</span></h2>
+        <span class="text-xs text-mute">${groups[l].length} laga</span>
+      </div>
+      ${groups[l].map(matchHtml).join('')}
+    </section>`).join('');
+}
+
+async function refresh() {
+  renderFilters();
+  $('#list').innerHTML = `<div class="rounded-xl border border-line bg-card p-8 text-center text-sm text-mute">Memuat pasaran…</div>`;
+  await loadDay(state.day);
+  renderList();
+}
+
+/* ================= COPY PASARAN ================= */
+function marketText(m) {
+  const hasH = m.hdp !== null && m.hdp !== undefined && m.hdp !== 0;
+  const h = esc0(m.home) + (hasH && m.side === 'h' ? ` (-${m.hdp})` : '');
+  const a = esc0(m.away) + (hasH && m.side === 'a' ? ` (-${m.hdp})` : '');
+  return `${h} vs ${a} | O/U: ${m.ou || '-'}`;
+}
+const esc0 = s => String(s);
+
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); }
+  catch {
+    const ta = document.createElement('textarea');
+    ta.value = t; ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  }
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.remove('opacity-0', 'translate-y-4');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('opacity-0', 'translate-y-4'), 2200);
+}
+
+function copyMatch(id) {
+  const m = (state.data[state.day] || []).find(x => x.id === id);
+  if (!m) return;
+  const t = marketText(m);
+  copyText(t).then(() => toast('Tersalin: ' + t));
+}
+
+/* ================= EVENTS ================= */
+document.addEventListener('click', e => {
+  const r = e.target.closest('[data-retry]'), d = e.target.closest('[data-day]'), l = e.target.closest('[data-league]'), m = e.target.closest('[data-id]');
+  if (r) { state.error = ''; state.req = null; state.data = {}; refresh(); }
+  else if (d) { state.day = +d.dataset.day; refresh(); }
+  else if (l) { state.league = l.dataset.league; renderFilters(); renderList(); }
+  else if (m) copyMatch(m.dataset.id);
+});
+document.addEventListener('keydown', e => {
+  const m = e.target.closest && e.target.closest('[data-id]');
+  if (m && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); copyMatch(m.dataset.id); }
+});
+$('#q').addEventListener('input', e => { state.q = e.target.value; renderList(); });
+
+/* ================= JAM WIB ================= */
+function tick() {
+  $('#clock').textContent = new Date().toLocaleTimeString('en-GB', { timeZone: TZ, hour12: false });
+}
+tick(); setInterval(tick, 1000);
+setInterval(() => { if (state.data[state.day]) renderList(); }, 60000); // perbarui status Live
+
+refresh();
+</script>
+</body>
+</html>
