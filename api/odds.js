@@ -7,6 +7,7 @@ const MARKETS = process.env.ODDS_MARKETS || 'h2h,spreads,totals';
 const CACHE_SECONDS = Math.max(60, parseInt(process.env.CACHE_SECONDS, 10) || 3600); // cache CDN Vercel
 const MAX_LEAGUES = Math.max(1, parseInt(process.env.MAX_LEAGUES, 10) || 25); // batas jumlah liga per refresh (hemat kuota)
 const WINDOW_DAYS = 7; // data yang dikirim ke browser: sekarang sampai +7 hari
+const CONCURRENCY = 5; // jumlah request bersamaan ke The Odds API (menghindari error 429 / rate limit)
 const TZ = 'Asia/Jakarta';
 
 // Metadata liga yang dikenal: nama, negara, grup pill filter, dan urutan tampil.
@@ -79,6 +80,33 @@ async function oddsGet(apiKey, sportKey) {
   return res.json();
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Panggil The Odds API; jika kena 429 (rate limit) tunggu sebentar lalu ulangi (maks. 2x)
+async function oddsGetRetry(apiKey, sportKey) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await oddsGet(apiKey, sportKey); }
+    catch (e) {
+      if (e.status !== 429 || attempt >= 2) throw e;
+      await sleep(1000 * (attempt + 1));
+    }
+  }
+}
+
+// Seperti Promise.allSettled, tetapi hanya `limit` tugas yang berjalan bersamaan
+async function allSettledLimited(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      try { out[i] = { status: 'fulfilled', value: await fn(items[i]) }; }
+      catch (reason) { out[i] = { status: 'rejected', reason }; }
+    }
+  }));
+  return out;
+}
+
 function errorText(e) {
   if (e.code === 'OUT_OF_USAGE_CREDITS') return 'Kuota API habis.';
   if (e.code === 'INVALID_KEY' || e.status === 401) return 'API key tidak valid.';
@@ -138,7 +166,7 @@ async function fetchLive(apiKey) {
   const tasks = soccer.slice(0, MAX_LEAGUES).map((s, i) => ({ key: s.key, ...cfgFor(s, i) }));
   const inactive = soccer.slice(MAX_LEAGUES).map(s => s.key); // aktif tapi tidak dimuat (kena batas MAX_LEAGUES)
 
-  const results = await Promise.allSettled(tasks.map(t => oddsGet(apiKey, t.key)));
+  const results = await allSettledLimited(tasks, CONCURRENCY, t => oddsGetRetry(apiKey, t.key));
   const failed = results.filter(r => r.status === 'rejected').map(r => r.reason);
   if (tasks.length && failed.length === tasks.length) throw failed[0];
 
