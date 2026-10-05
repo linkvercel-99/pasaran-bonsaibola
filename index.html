@@ -12,14 +12,18 @@
 <script>
 tailwind.config = { theme: { extend: {
   fontFamily: { sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif'] },
-  colors: { bg: '#142811', card: '#0a1408', card2: '#183215', line: '#1f3d1b', lime: '#4ade80', mute: '#9ca3af' }
+  colors: { bg: '#142811', card: '#0a1408', card2: '#183215', line: '#1f3d1b', lime: '#4ade80', mute: '#9ca3af',
+    /* tema terang (area di bawah header) */
+    page: '#e6f5da', lcard: '#eef9e6', lhead: '#d3ebc2', lline: '#b9c9ad', ink: '#1f2d1a', lmute: '#5f6f55',
+    nblue: '#0000cd', nred: '#e0262e', oblue: '#1c6ef2' }
 }}};
 </script>
 <style>
-  body { background:#142811; color:#fff; font-family:'Plus Jakarta Sans',Inter,system-ui,sans-serif; }
+  body { background:#e6f5da; color:#1f2d1a; font-family:'Plus Jakarta Sans',Inter,system-ui,sans-serif; }
   /* Background header: gambar + lapisan hijau gelap agar teks tetap terbaca.
      Atur angka .45 (atas) dan .88 (bawah): makin KECIL = gambar makin terang/jelas. */
   #hdr {
+    color: #fff;
     background-color: #142811;
     background-image:
       linear-gradient(180deg, rgba(10,20,8,.45) 0%, rgba(20,40,17,.88) 100%),
@@ -30,7 +34,7 @@ tailwind.config = { theme: { extend: {
   .tnum { font-variant-numeric: tabular-nums; }
   .no-sb { scrollbar-width:none; } .no-sb::-webkit-scrollbar { display:none; }
   .match { cursor:pointer; transition: background .15s; }
-  .match:hover { background:#102009; }
+  .match:hover { background:#e1f3d4; }
   :focus-visible { outline:2px solid #4ade80; outline-offset:2px; }
   .dot { animation: pulse 1.4s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity:.25; } }
@@ -63,9 +67,9 @@ tailwind.config = { theme: { extend: {
 </header>
 
 <main class="max-w-4xl mx-auto px-3 py-4">
-  <div id="banner" class="hidden mb-3 rounded-lg border border-line bg-card2 px-3 py-2 text-xs text-mute"></div>
+  <div id="banner" class="hidden mb-3 rounded-lg border border-lline bg-lhead px-3 py-2 text-xs text-ink"></div>
   <div id="list" class="space-y-4" aria-live="polite"></div>
-  <p class="mt-8 text-center text-xs text-mute">Odds hanya sebagai informasi. Ketuk pertandingan untuk menyalin pasaran.</p>
+  <p class="mt-8 text-center text-xs text-lmute">Odds hanya sebagai informasi. Ketuk pertandingan untuk menyalin pasaran.</p>
 </main>
 
 <div id="toast" class="fixed left-1/2 bottom-6 z-30 -translate-x-1/2 translate-y-4 opacity-0 pointer-events-none transition rounded-full bg-lime px-4 py-2 text-sm font-semibold text-card shadow-lg max-w-[90vw] truncate" role="status"></div>
@@ -126,9 +130,9 @@ function status(m) {
 }
 function statusHtml(m) {
   const s = status(m);
-  if (s.s === 'live') return `<span class="inline-flex items-center gap-1 rounded bg-lime/15 px-1.5 py-0.5 text-[11px] font-bold text-lime"><span class="dot h-1.5 w-1.5 rounded-full bg-lime"></span>Live${s.min ? ' ' + s.min + "'" : ''}</span>`;
-  if (s.s === 'ft') return `<span class="text-[11px] text-mute">Selesai</span>`;
-  return `<span class="text-[11px] text-mute">Upcoming</span>`;
+  if (s.s === 'live') return `<span class="inline-flex items-center gap-1 rounded bg-nred/10 px-1.5 py-0.5 text-[11px] font-bold text-nred"><span class="dot h-1.5 w-1.5 rounded-full bg-nred"></span>Live${s.min ? ' ' + s.min + "'" : ''}</span>`;
+  if (s.s === 'ft') return `<span class="text-[11px] text-lmute">Selesai</span>`;
+  return `<span class="text-[11px] text-lmute">Upcoming</span>`;
 }
 
 /* ================= RENDER ================= */
@@ -143,18 +147,20 @@ function renderFilters() {
       class="shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-semibold transition ${state.league === l ? 'bg-lime border-lime text-card' : 'bg-card border-line text-white hover:border-lime/60'}">${l}</button>`).join('');
 }
 
-function teamRow(name, gives, val) {
+// Warna nama tim (mengikuti referensi): tim pemberi voor = biru, lawannya = merah.
+// Voor 0 / tanpa voor: tuan rumah biru, tamu merah.
+function teamRow(name, blue, gives, val) {
   return `<div class="flex items-center gap-2 min-w-0">
-    <span class="truncate text-[15px] font-semibold">${esc(name)}</span>
+    <span class="truncate text-[15px] font-bold ${blue ? 'text-nblue' : 'text-nred'}">${esc(name)}</span>
     ${gives && val !== 0 ? `<span class="shrink-0 rounded bg-lime px-1.5 py-0.5 text-[11px] font-extrabold text-card tnum">${fmtHdp(val, true)}</span>` : ''}
   </div>`;
 }
 
 function cell(label, main, sub) {
   return `<div class="px-2 py-2 text-center">
-    <div class="text-[10px] text-mute">${label}</div>
+    <div class="text-[10px] text-lmute">${label}</div>
     <div class="text-sm font-bold tnum">${main}</div>
-    ${sub ? `<div class="truncate text-[10px] text-mute">${sub}</div>` : ''}
+    ${sub ? `<div class="truncate text-[10px] text-lmute">${sub}</div>` : ''}
   </div>`;
 }
 
@@ -162,21 +168,22 @@ function matchHtml(m) {
   const hasH = m.hdp !== null && m.hdp !== undefined;
   const hg = m.side === 'h';
   const giver = hg ? m.home : m.away;
-  const hdpCell = hasH ? cell('HDP', `<span class="text-lime">${fmtHdp(m.hdp, true)}</span>`, esc(giver)) : cell('HDP', '-', '');
+  const homeBlue = hasH && m.hdp !== 0 ? hg : true;
+  const hdpCell = hasH ? cell('HDP', `<span class="text-ink">${fmtHdp(m.hdp, true)}</span>`, esc(giver)) : cell('HDP', '-', '');
   const ouCell = cell('O/U', m.ou ? esc(m.ou) : '-', '');
   const min = Math.min(...m.odds.filter(Boolean));
   const oddsCell = `<div class="px-2 py-2 text-center">
-    <div class="grid grid-cols-3 text-[10px] text-mute"><span>1</span><span>X</span><span>2</span></div>
-    <div class="grid grid-cols-3 text-sm font-bold tnum">${m.odds.map(o => `<span class="${o && o === min ? 'text-lime' : ''}">${o ? o.toFixed(2) : '-'}</span>`).join('')}</div>
+    <div class="grid grid-cols-3 text-[10px] text-lmute"><span>1</span><span>X</span><span>2</span></div>
+    <div class="grid grid-cols-3 text-sm font-bold tnum">${m.odds.map(o => `<span class="${o && o === min ? 'text-nred' : 'text-oblue'}">${o ? o.toFixed(2) : '-'}</span>`).join('')}</div>
   </div>`;
-  return `<div class="match sm:flex sm:items-center border-t border-line first:border-t-0" role="button" tabindex="0" data-id="${m.id}" aria-label="Salin pasaran ${esc(m.home)} vs ${esc(m.away)}">
+  return `<div class="match sm:flex sm:items-center border-t border-lline first:border-t-0" role="button" tabindex="0" data-id="${m.id}" aria-label="Salin pasaran ${esc(m.home)} vs ${esc(m.away)}">
     <div class="flex items-center gap-3 px-3 pt-3 sm:py-3 sm:flex-1 min-w-0">
       <div class="w-14 shrink-0 text-center space-y-0.5">
         <div class="text-sm font-bold tnum">${fmtTime(m.ts)}</div>${statusHtml(m)}
       </div>
-      <div class="min-w-0 flex-1 space-y-1">${teamRow(m.home, hasH && hg, m.hdp)}${teamRow(m.away, hasH && !hg, m.hdp)}</div>
+      <div class="min-w-0 flex-1 space-y-1">${teamRow(m.home, homeBlue, hasH && hg, m.hdp)}${teamRow(m.away, !homeBlue, hasH && !hg, m.hdp)}</div>
     </div>
-    <div class="mt-2 sm:mt-0 grid grid-cols-[1fr_1fr_1.7fr] divide-x divide-line border-t border-line sm:border-t-0 sm:w-[340px] sm:shrink-0">
+    <div class="mt-2 sm:mt-0 grid grid-cols-[1fr_1fr_1.7fr] divide-x divide-lline border-t border-lline sm:border-t-0 sm:w-[340px] sm:shrink-0">
       ${hdpCell}${ouCell}${oddsCell}
     </div>
   </div>`;
@@ -194,9 +201,9 @@ function renderList() {
   const b = $('#banner');
   if (state.error) {
     b.classList.add('hidden');
-    $('#list').innerHTML = `<div class="rounded-xl border border-line bg-card p-8 text-center text-sm">
-      <p class="text-mute">${esc(state.error)}</p>
-      <p class="mt-1 text-xs text-mute">Jika dijalankan lokal, gunakan <code>vercel dev</code>, bukan membuka file langsung.</p>
+    $('#list').innerHTML = `<div class="rounded-xl border border-lline bg-lcard p-8 text-center text-sm">
+      <p class="text-lmute">${esc(state.error)}</p>
+      <p class="mt-1 text-xs text-lmute">Jika dijalankan lokal, gunakan <code>vercel dev</code>, bukan membuka file langsung.</p>
       <button data-retry class="mt-4 rounded-lg bg-lime px-4 py-2 font-semibold text-card">Coba lagi</button></div>`;
     return;
   }
@@ -210,17 +217,17 @@ function renderList() {
       && (state.league === 'Semua Liga' || m.group === state.league)
       && new Date(m.ts).toLocaleDateString('en-CA', { timeZone: TZ }) > cur);
     const hint = next ? `<p class="mt-2 text-xs">Pertandingan berikutnya: ${new Date(next.ts).toLocaleDateString('id-ID', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })}</p>` : '';
-    $('#list').innerHTML = `<div class="rounded-xl border border-line bg-card p-8 text-center text-sm text-mute">Tidak ada pertandingan. Ubah tanggal, liga, atau kata kunci pencarian.${hint}</div>`;
+    $('#list').innerHTML = `<div class="rounded-xl border border-lline bg-lcard p-8 text-center text-sm text-lmute">Tidak ada pertandingan. Ubah tanggal, liga, atau kata kunci pencarian.${hint}</div>`;
     return;
   }
   const groups = {};
   ms.forEach(m => (groups[m.league] = groups[m.league] || []).push(m));
   const order = Object.keys(groups).sort((x, y) => groups[x][0].order - groups[y][0].order);
   $('#list').innerHTML = order.map(l => `
-    <section class="overflow-hidden rounded-xl border border-line bg-card">
-      <div class="flex items-center justify-between bg-card2 border-b-2 border-lime px-3 py-2">
-        <h2 class="text-sm font-bold">${esc(l)}<span class="ml-2 text-xs font-medium text-mute">${esc(groups[l][0].country || '')}</span></h2>
-        <span class="text-xs text-mute">${groups[l].length} laga</span>
+    <section class="overflow-hidden rounded-xl border border-lline bg-lcard">
+      <div class="flex items-center justify-between bg-lhead border-b-2 border-[#55cb47] px-3 py-2">
+        <h2 class="text-sm font-bold">${esc(l)}<span class="ml-2 text-xs font-medium text-lmute">${esc(groups[l][0].country || '')}</span></h2>
+        <span class="text-xs text-lmute">${groups[l].length} laga</span>
       </div>
       ${groups[l].map(matchHtml).join('')}
     </section>`).join('');
@@ -228,7 +235,7 @@ function renderList() {
 
 async function refresh() {
   renderFilters();
-  $('#list').innerHTML = `<div class="rounded-xl border border-line bg-card p-8 text-center text-sm text-mute">Memuat pasaran…</div>`;
+  $('#list').innerHTML = `<div class="rounded-xl border border-lline bg-lcard p-8 text-center text-sm text-lmute">Memuat pasaran…</div>`;
   await loadDay(state.day);
   renderList();
 }
