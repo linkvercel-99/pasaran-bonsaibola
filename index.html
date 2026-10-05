@@ -17,6 +17,16 @@ tailwind.config = { theme: { extend: {
 </script>
 <style>
   body { background:#142811; color:#fff; font-family:'Plus Jakarta Sans',Inter,system-ui,sans-serif; }
+  /* Background header: gambar + lapisan hijau gelap agar teks tetap terbaca.
+     Atur angka .45 (atas) dan .88 (bawah): makin KECIL = gambar makin terang/jelas. */
+  #hdr {
+    background-color: #142811;
+    background-image:
+      linear-gradient(180deg, rgba(10,20,8,.45) 0%, rgba(20,40,17,.88) 100%),
+      url('https://mobile.bonsaibolamen.com/apps/img/165/slider/bonsai1.png');
+    background-size: cover;
+    background-position: center;
+  }
   .tnum { font-variant-numeric: tabular-nums; }
   .no-sb { scrollbar-width:none; } .no-sb::-webkit-scrollbar { display:none; }
   .match { cursor:pointer; transition: background .15s; }
@@ -29,7 +39,7 @@ tailwind.config = { theme: { extend: {
 </head>
 <body class="min-h-screen">
 
-<header class="sticky top-0 z-20 bg-bg/95 backdrop-blur border-b border-line">
+<header id="hdr" class="sticky top-0 z-20 border-b border-line">
   <div class="max-w-4xl mx-auto px-3 pt-3 pb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
     <h1 class="shrink-0 flex items-center">
       <img src="https://bonsaibola5.org/Images/logo.png" alt="Bonsai Bola" decoding="async"
