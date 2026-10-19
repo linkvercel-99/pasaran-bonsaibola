@@ -1,99 +1,56 @@
-// api/odds.js — Vercel Serverless Function (Node.js)
-// API key hanya dibaca dari environment variable ODDS_API_KEY dan tidak pernah dikirim ke browser.
+// api/odds.js — Vercel Serverless Function (Node.js) — sumber data: ESPN API (gratis, tanpa API key)
+// Dipanggil dari server agar tidak kena CORS di browser. Format output SAMA seperti versi lama.
 
-const API_BASE = 'https://api.the-odds-api.com/v4/sports';
-const REGIONS = process.env.ODDS_REGIONS || 'eu';
-const MARKETS = process.env.ODDS_MARKETS || 'h2h,spreads,totals';
-const CACHE_SECONDS = Math.max(60, parseInt(process.env.CACHE_SECONDS, 10) || 3600); // cache CDN Vercel
-const MAX_LEAGUES = Math.max(1, parseInt(process.env.MAX_LEAGUES, 10) || 25); // batas jumlah liga per refresh (hemat kuota)
-const WINDOW_DAYS = 7; // data yang dikirim ke browser: sekarang sampai +7 hari
-const CONCURRENCY = 5; // jumlah request bersamaan ke The Odds API (menghindari error 429 / rate limit)
+const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
+const CACHE_SECONDS = Math.max(30, parseInt(process.env.CACHE_SECONDS, 10) || 300);
+const DAYS = 3;         // Hari Ini, Besok, Lusa
+const CONCURRENCY = 6;
 const TZ = 'Asia/Jakarta';
 
-// Metadata liga yang dikenal: nama, negara, grup pill filter, dan urutan tampil.
-// Daftar ini TIDAK membatasi: semua liga sepak bola yang aktif di The Odds API ikut dimuat otomatis (lihat fetchLive).
-// group harus sama dengan pill di index.html ('Lainnya' = hanya muncul di "Semua Liga").
+// [kode liga ESPN, nama, negara, grup pill di index.html]
 const L = (keys, name, country, group = 'Lainnya') => ({ keys: [].concat(keys), name, country, group });
 const LEAGUES = [
-  L('soccer_epl', 'Premier League', 'Inggris', 'Premier League'),
-  L('soccer_efl_champ', 'Championship', 'Inggris'),
-  L('soccer_england_league1', 'League One', 'Inggris'),
-  L('soccer_spain_la_liga', 'La Liga', 'Spanyol', 'La Liga'),
-  L('soccer_spain_segunda_division', 'La Liga 2', 'Spanyol'),
-  L('soccer_italy_serie_a', 'Serie A', 'Italia', 'Serie A'),
-  L('soccer_italy_serie_b', 'Serie B', 'Italia'),
-  L('soccer_germany_bundesliga', 'Bundesliga', 'Jerman', 'Bundesliga'),
-  L('soccer_germany_bundesliga2', 'Bundesliga 2', 'Jerman'),
-  L('soccer_france_ligue_one', 'Ligue 1', 'Prancis'),
-  L('soccer_france_ligue_two', 'Ligue 2', 'Prancis'),
-  L('soccer_uefa_champs_league', 'Champions League', 'Eropa', 'Champions League'),
-  L('soccer_uefa_europa_league', 'Europa League', 'Eropa'),
-  L('soccer_uefa_europa_conf_league', 'Conference League', 'Eropa'),
-  L('soccer_uefa_nations_league', 'Nations League', 'Eropa'),
-  L('soccer_netherlands_eredivisie', 'Eredivisie', 'Belanda'),
-  L('soccer_portugal_primeira_liga', 'Primeira Liga', 'Portugal'),
-  L('soccer_belgium_first_div', 'Pro League', 'Belgia'),
-  L('soccer_turkey_super_league', 'Super Lig', 'Turki'),
-  L('soccer_spl', 'Scottish Premiership', 'Skotlandia'),
-  L('soccer_japan_j_league', 'J-League', 'Jepang', 'Liga Asia'),
-  L(['soccer_korea_kleague1', 'soccer_korea_k_league'], 'K League', 'Korea Selatan', 'Liga Asia'),
-  L(['soccer_china_superleague', 'soccer_china_super_league'], 'Chinese Super League', 'China', 'Liga Asia'),
-  L('soccer_australia_aleague', 'A-League', 'Australia', 'Liga Asia'),
-  L(['soccer_saudi_arabia_pro_league', 'soccer_saudi_pro_league'], 'Saudi Pro League', 'Arab Saudi', 'Liga Asia'),
-  L('soccer_usa_mls', 'MLS', 'Amerika Serikat'),
-  L('soccer_brazil_campeonato', 'Brasileirão', 'Brasil'),
-  L('soccer_mexico_ligamx', 'Liga MX', 'Meksiko'),
-  L('soccer_argentina_primera_division', 'Liga Argentina', 'Argentina'),
-  L('soccer_conmebol_copa_libertadores', 'Copa Libertadores', 'Amerika Selatan'),
-  L('soccer_conmebol_copa_sudamericana', 'Copa Sudamericana', 'Amerika Selatan')
+  L('eng.1', 'Premier League', 'Inggris', 'Premier League'),
+  L('eng.2', 'Championship', 'Inggris'),
+  L('eng.3', 'League One', 'Inggris'),
+  L('esp.1', 'La Liga', 'Spanyol', 'La Liga'),
+  L('esp.2', 'La Liga 2', 'Spanyol'),
+  L('ita.1', 'Serie A', 'Italia', 'Serie A'),
+  L('ita.2', 'Serie B', 'Italia'),
+  L('ger.1', 'Bundesliga', 'Jerman', 'Bundesliga'),
+  L('ger.2', 'Bundesliga 2', 'Jerman'),
+  L('fra.1', 'Ligue 1', 'Prancis'),
+  L('fra.2', 'Ligue 2', 'Prancis'),
+  L('uefa.champions', 'Champions League', 'Eropa', 'Champions League'),
+  L('uefa.europa', 'Europa League', 'Eropa'),
+  L('uefa.europa.conf', 'Conference League', 'Eropa'),
+  L('uefa.nations', 'Nations League', 'Eropa'),
+  L('ned.1', 'Eredivisie', 'Belanda'),
+  L('por.1', 'Primeira Liga', 'Portugal'),
+  L('bel.1', 'Pro League', 'Belgia'),
+  L('tur.1', 'Super Lig', 'Turki'),
+  L('sco.1', 'Scottish Premiership', 'Skotlandia'),
+  L('jpn.1', 'J-League', 'Jepang', 'Liga Asia'),
+  L('chn.1', 'Chinese Super League', 'China', 'Liga Asia'),
+  L('aus.1', 'A-League', 'Australia', 'Liga Asia'),
+  L('ksa.1', 'Saudi Pro League', 'Arab Saudi', 'Liga Asia'),
+  L('idn.1', 'Liga 1 Indonesia', 'Indonesia', 'Liga Asia'),
+  L('usa.1', 'MLS', 'Amerika Serikat'),
+  L('bra.1', 'Brasileirão', 'Brasil'),
+  L('mex.1', 'Liga MX', 'Meksiko'),
+  L('arg.1', 'Liga Argentina', 'Argentina'),
+  L('conmebol.libertadores', 'Copa Libertadores', 'Amerika Selatan'),
+  L('conmebol.sudamericana', 'Copa Sudamericana', 'Amerika Selatan')
 ];
 
-// Liga yang tidak ada di daftar di atas: pakai judul dari The Odds API; key Asia masuk pill "Liga Asia"
-const ASIA = /japan|korea|china|australia|saudi|thailand|indonesia|malaysia|india|uae|qatar|iran|uzbekistan|vietnam|afc/i;
-function cfgFor(s, i) {
-  const k = LEAGUES.findIndex(c => c.keys.includes(s.key));
-  if (k >= 0) return { cfg: LEAGUES[k], order: k };
-  return { cfg: { name: s.title || s.key, country: '', group: ASIA.test(s.key) ? 'Liga Asia' : 'Lainnya' }, order: LEAGUES.length + i };
+/* ---------- ESPN API ---------- */
+async function espnDay(code, ymd) {
+  const res = await fetch(`${ESPN}/${code}/scoreboard?dates=${ymd}`, { headers: { Accept: 'application/json' } });
+  if (res.status === 400 || res.status === 404) return [];
+  if (!res.ok) { const e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
+  return (await res.json()).events || [];
 }
 
-/* ---------- The Odds API ---------- */
-async function apiError(res) {
-  let code = '';
-  try { code = (await res.json()).error_code || ''; } catch {}
-  const e = new Error(code || 'HTTP ' + res.status);
-  e.status = res.status; e.code = code;
-  return e;
-}
-
-// Semua liga sepak bola yang sedang aktif (endpoint /sports tidak memakai kuota odds)
-async function activeSoccer(apiKey) {
-  const res = await fetch(`${API_BASE}?${new URLSearchParams({ apiKey })}`);
-  if (!res.ok) throw await apiError(res);
-  return (await res.json()).filter(s => s.active && s.key.startsWith('soccer_') && !s.has_outrights && !/winner/.test(s.key));
-}
-
-async function oddsGet(apiKey, sportKey) {
-  const qs = new URLSearchParams({ apiKey, regions: REGIONS, markets: MARKETS, oddsFormat: 'decimal', dateFormat: 'iso' });
-  const res = await fetch(`${API_BASE}/${sportKey}/odds?${qs}`);
-  if (res.status === 404) return [];
-  if (!res.ok) throw await apiError(res);
-  return res.json();
-}
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-// Panggil The Odds API; jika kena 429 (rate limit) tunggu sebentar lalu ulangi (maks. 2x)
-async function oddsGetRetry(apiKey, sportKey) {
-  for (let attempt = 0; ; attempt++) {
-    try { return await oddsGet(apiKey, sportKey); }
-    catch (e) {
-      if (e.status !== 429 || attempt >= 2) throw e;
-      await sleep(1000 * (attempt + 1));
-    }
-  }
-}
-
-// Seperti Promise.allSettled, tetapi hanya `limit` tugas yang berjalan bersamaan
 async function allSettledLimited(items, limit, fn) {
   const out = new Array(items.length);
   let next = 0;
@@ -108,80 +65,87 @@ async function allSettledLimited(items, limit, fn) {
 }
 
 function errorText(e) {
-  if (e.code === 'OUT_OF_USAGE_CREDITS') return 'Kuota API habis.';
-  if (e.code === 'INVALID_KEY' || e.status === 401) return 'API key tidak valid.';
-  if (e.status === 429 || e.code === 'EXCEEDED_FREQ_LIMIT') return 'Terlalu banyak request ke API.';
-  return `Gagal memuat API (${e.message}).`;
+  if (e.status === 429) return 'Terlalu banyak request ke ESPN API.';
+  return `Gagal memuat ESPN API (${e.message}).`;
 }
 
 /* ---------- Mapping ---------- */
-function pickMarket(ev, key) {
-  for (const b of ev.bookmakers || []) {
-    const m = (b.markets || []).find(x => x.key === key);
-    if (m && m.outcomes && m.outcomes.length) return m.outcomes;
-  }
-  return null;
+// Odds Amerika (-180 / +475) -> desimal (1.56 / 5.75)
+function dec(v) {
+  const n = parseFloat(String(v ?? '').replace('+', ''));
+  if (!isFinite(n) || n === 0) return 0;
+  return +(n > 0 ? 1 + n / 100 : 1 + 100 / -n).toFixed(2);
 }
-
 // 2.5 -> "2.5", 2.75 -> "2.5 / 3.0"
 const fmtLine = p => ((p * 4) % 2 === 0 ? p.toFixed(1) : (p - 0.25).toFixed(1) + ' / ' + (p + 0.25).toFixed(1));
+const num = v => { const n = parseFloat(String(v ?? '').replace(/^[ou]/i, '')); return isFinite(n) ? n : null; };
+const close = x => (x && (x.close || x.open)) || {};
 
 function mapEvent(ev, cfg, order) {
-  const h2h = pickMarket(ev, 'h2h') || [];
-  const price = n => +((h2h.find(o => o.name === n) || {}).price) || 0;
+  const c = (ev.competitions || [])[0] || {};
+  const home = (c.competitors || []).find(t => t.homeAway === 'home') || {};
+  const away = (c.competitors || []).find(t => t.homeAway === 'away') || {};
+  const o = (c.odds || [])[0] || {};
 
-  let side = 'h', hdp = null; // point negatif = tim pemberi voor
-  const sp = pickMarket(ev, 'spreads');
-  if (sp) {
-    const ho = sp.find(o => o.name === ev.home_team), ao = sp.find(o => o.name === ev.away_team);
-    if (ho && typeof ho.point === 'number') { side = ho.point > 0 ? 'a' : 'h'; hdp = Math.abs(ho.point); }
-    else if (ao && typeof ao.point === 'number') { side = ao.point > 0 ? 'h' : 'a'; hdp = Math.abs(ao.point); }
-  }
+  const ml = o.moneyline || {};
+  const odds = [
+    dec(close(ml.home).odds ?? (o.homeTeamOdds || {}).moneyLine),
+    dec(close(ml.draw).odds ?? (o.drawOdds || {}).moneyLine),
+    dec(close(ml.away).odds ?? (o.awayTeamOdds || {}).moneyLine)
+  ];
 
-  let ou = null; // garis dengan harga Over/Under paling seimbang
-  const tt = pickMarket(ev, 'totals');
-  if (tt) {
-    const lines = {};
-    tt.forEach(o => { if (typeof o.point === 'number') (lines[o.point] = lines[o.point] || {})[o.name] = o.price; });
-    let diff = Infinity;
-    for (const p in lines) if (lines[p].Over && lines[p].Under) {
-      const d = Math.abs(lines[p].Over - lines[p].Under);
-      if (d < diff) { diff = d; ou = fmtLine(+p); }
-    }
-  }
+  let side = 'h', hdp = null; // line negatif = tim pemberi voor
+  const hl = num(close((o.pointSpread || {}).home).line);
+  const al = num(close((o.pointSpread || {}).away).line);
+  if (hl !== null) { side = hl > 0 ? 'a' : 'h'; hdp = Math.abs(hl); }
+  else if (al !== null) { side = al > 0 ? 'h' : 'a'; hdp = Math.abs(al); }
+
+  let ou = null;
+  const tl = num(close((o.total || {}).over).line);
+  const p = tl !== null ? tl : (typeof o.overUnder === 'number' ? o.overUnder : null);
+  if (p !== null) ou = fmtLine(p);
+
+  // Status asli dari ESPN (live / selesai) + skor
+  const t = (ev.status || {}).type || {};
+  let st;
+  if (t.state === 'in') st = { s: 'live', min: parseInt((ev.status || {}).displayClock, 10) || 0 };
+  else if (t.state === 'post') st = { s: 'ft' };
+  else st = { s: 'up' };
 
   return {
-    id: ev.id, league: cfg.name, country: cfg.country, group: cfg.group, order,
-    ts: Date.parse(ev.commence_time), home: ev.home_team, away: ev.away_team,
-    side, hdp, ou, odds: [price(ev.home_team), price('Draw'), price(ev.away_team)]
+    id: 'espn-' + ev.id, league: cfg.name, country: cfg.country, group: cfg.group, order,
+    ts: Date.parse(ev.date), home: (home.team || {}).displayName || '-', away: (away.team || {}).displayName || '-',
+    side, hdp, ou, odds: odds.some(Boolean) ? odds : [0, 0, 0],
+    st, score: t.state === 'pre' ? null : [home.score, away.score]
   };
 }
 
-// Ambil semua liga aktif sekaligus (maks. MAX_LEAGUES); satu liga gagal/kosong tidak membatalkan yang lain
-async function fetchLive(apiKey) {
-  const soccer = await activeSoccer(apiKey);
-  const rank = s => { const i = LEAGUES.findIndex(c => c.keys.includes(s.key)); return i < 0 ? 999 : i; };
-  soccer.sort((a, b) => rank(a) - rank(b) || (a.title || '').localeCompare(b.title || '')); // liga besar didahulukan
+// Tanggal YYYYMMDD (UTC) dari kemarin s/d +DAYS agar semua jam WIB tercakup
+function ymdList() {
+  const out = [];
+  for (let d = -1; d <= DAYS; d++) out.push(new Date(Date.now() + d * 864e5).toISOString().slice(0, 10).replace(/-/g, ''));
+  return out;
+}
 
-  const tasks = soccer.slice(0, MAX_LEAGUES).map((s, i) => ({ key: s.key, ...cfgFor(s, i) }));
-  const inactive = soccer.slice(MAX_LEAGUES).map(s => s.key); // aktif tapi tidak dimuat (kena batas MAX_LEAGUES)
-
-  const results = await allSettledLimited(tasks, CONCURRENCY, t => oddsGetRetry(apiKey, t.key));
+async function fetchLive() {
+  const tasks = [];
+  LEAGUES.forEach((cfg, order) => ymdList().forEach(ymd => tasks.push({ code: cfg.keys[0], ymd, cfg, order })));
+  const results = await allSettledLimited(tasks, CONCURRENCY, t => espnDay(t.code, t.ymd));
   const failed = results.filter(r => r.status === 'rejected').map(r => r.reason);
-  if (tasks.length && failed.length === tasks.length) throw failed[0];
+  if (failed.length === tasks.length) throw failed[0];
 
-  const from = Date.now() - 3 * 36e5, to = Date.now() + WINDOW_DAYS * 864e5;
+  const from = Date.now() - 36 * 36e5, to = Date.now() + (DAYS + 1) * 864e5;
   const seen = new Set(), events = [];
   results.forEach((r, i) => {
     if (r.status !== 'fulfilled') return;
     r.value.forEach(ev => {
       const m = mapEvent(ev, tasks[i].cfg, tasks[i].order);
-      if (seen.has(m.id) || m.ts < from || m.ts > to) return;
+      if (seen.has(m.id) || !m.ts || m.ts < from || m.ts > to) return;
       seen.add(m.id); events.push(m);
     });
   });
   events.sort((a, b) => a.ts - b.ts);
-  return { events, inactive, failed };
+  return { events, failed };
 }
 
 /* ---------- Data mock (fallback) ----------
@@ -236,17 +200,13 @@ module.exports = async function handler(req, res) {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method not allowed' });
   }
-  const apiKey = (process.env.ODDS_API_KEY || '').trim();
-  if (!apiKey) return reply(res, mockPayload('ODDS_API_KEY belum diatur di server.'), 60);
-
   try {
-    const { events, inactive, failed } = await fetchLive(apiKey);
-    if (!events.length) return reply(res, mockPayload('Tidak ada pertandingan terjadwal dari API.'), 300);
-    const notice = failed.length ? `${errorText(failed[0])} ${failed.length} permintaan liga gagal.` : '';
-    return reply(res, { source: 'live', notice, updatedAt: new Date().toISOString(), inactive, events },
-      failed.length ? 120 : CACHE_SECONDS);
+    const { events, failed } = await fetchLive();
+    if (!events.length) return reply(res, mockPayload('Tidak ada pertandingan terjadwal dari ESPN.'), 300);
+    const notice = failed.length ? `${errorText(failed[0])} ${failed.length} permintaan gagal.` : '';
+    return reply(res, { source: 'espn', notice, updatedAt: new Date().toISOString(), events }, failed.length ? 60 : CACHE_SECONDS);
   } catch (e) {
-    console.error('odds api error:', e.message); // jangan pernah log URL (mengandung apiKey)
-    return reply(res, mockPayload(errorText(e)), 120);
+    console.error('espn api error:', e.message);
+    return reply(res, mockPayload(errorText(e)), 60);
   }
 };
