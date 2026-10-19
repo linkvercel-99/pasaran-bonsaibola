@@ -115,48 +115,17 @@ tailwind.config = { theme: { extend: {
 /* ================= KONFIGURASI ================= */
 const TZ = 'Asia/Jakarta';
 // Pill filter. Data liga (nama, negara, grup) datang dari server: api/odds.js
-// Daftar liga lengkap ala ESPN. Kata kunci dicocokkan ke nama liga / grup dari server.
-const LEAGUES = [
-  ['Semua Liga', []],
-  ['Premier League', ['premier league','english premier']],
-  ['Champions League', ['champions league']],
-  ['Europa League', ['europa league']],
-  ['Conference League', ['conference league']],
-  ['La Liga', ['la liga','laliga','primera division']],
-  ['Serie A', ['serie a','italian serie a']],
-  ['Bundesliga', ['bundesliga']],
-  ['Ligue 1', ['ligue 1']],
-  ['Eredivisie', ['eredivisie']],
-  ['Liga Portugal', ['primeira liga','liga portugal']],
-  ['Scottish Premiership', ['scottish premiership']],
-  ['Süper Lig', ['super lig','süper lig','turkish']],
-  ['Championship', ['championship']],
-  ['FA Cup', ['fa cup']],
-  ['Carabao Cup', ['carabao','efl cup','league cup']],
-  ['Copa del Rey', ['copa del rey']],
-  ['Coppa Italia', ['coppa italia']],
-  ['DFB Pokal', ['dfb pokal','dfb-pokal']],
-  ['MLS', ['mls','major league soccer']],
-  ['Liga MX', ['liga mx']],
-  ['Brasileirão', ['brasileir','serie a brazil','brazil']],
-  ['Liga Argentina', ['argentin']],
-  ['Copa Libertadores', ['libertadores']],
-  ['Saudi Pro League', ['saudi']],
-  ['Liga 1 Indonesia', ['indonesia','liga 1 indonesia','bri liga']],
-  ['J1 League', ['j1','j. league','j-league','japan']],
-  ['K League 1', ['k league','korea']],
-  ['A-League', ['a-league','australia']],
-  ['Liga Asia', ['afc','asia']],
-  ['Piala Dunia', ['world cup','fifa']],
-  ['Euro / UEFA Nations', ['euro','nations league']],
-];
-const FILTERS = LEAGUES.map(l => l[0]);
-const KW = Object.fromEntries(LEAGUES);
-const inLeague = m => {
-  if inLeague(m) return true;
-  const t = ((m.league || '') + ' ' + (m.country || '')).toLowerCase();
-  return (KW[state.league] || []).some(k => t.includes(k));
-};
+// Nama liga HARUS sama persis dengan field "name" di api/odds.js (LEAGUES).
+const FILTERS = ['Semua Liga',
+  'Premier League', 'Championship', 'League One',
+  'La Liga', 'La Liga 2', 'Serie A', 'Serie B',
+  'Bundesliga', 'Bundesliga 2', 'Ligue 1', 'Ligue 2',
+  'Champions League', 'Europa League', 'Conference League', 'Nations League',
+  'Eredivisie', 'Primeira Liga', 'Pro League', 'Super Lig', 'Scottish Premiership',
+  'Liga Asia', 'J-League', 'Chinese Super League', 'A-League', 'Saudi Pro League', 'Liga 1 Indonesia',
+  'MLS', 'Brasileirão', 'Liga MX', 'Liga Argentina', 'Copa Libertadores', 'Copa Sudamericana'];
+// Cocok jika nama liga sama, atau grup sama (mis. "Liga Asia" = J-League, A-League, dll.)
+const inLeague = m => state.league === 'Semua Liga' || m.league === state.league || m.group === state.league;
 const DAY_LABELS = ['Hari Ini', 'Besok', 'Lusa'];
 const TABS = ['live', 0, 1, 2, 'hist'];   // Live, Hari Ini, Besok, Lusa, Riwayat
 const HIST_DAYS = [-1, -2, -3];           // Riwayat hanya 3 hari terakhir
@@ -309,7 +278,7 @@ function baseList() {
 function visible() {
   const q = state.q.trim().toLowerCase();
   return baseList()
-    .filter(m => state.league === 'Semua Liga' || m.group === state.league)
+    .filter(m => inLeague(m))
     .filter(m => !q || [m.home, m.away, m.league].some(t => t.toLowerCase().includes(q)))
     .sort((a, b) => state.tab === 'hist' ? b.ts - a.ts : a.ts - b.ts);
 }
