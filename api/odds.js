@@ -4,7 +4,8 @@
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
 const CACHE_SECONDS = Math.max(30, parseInt(process.env.CACHE_SECONDS, 10) || 300);
 const DAYS = 3;         // Hari Ini, Besok, Lusa
-const CONCURRENCY = 6;
+const HISTORY = 3;      // Riwayat: 3 hari sebelumnya
+const CONCURRENCY = 10;
 const TZ = 'Asia/Jakarta';
 
 // [kode liga ESPN, nama, negara, grup pill di index.html]
@@ -108,22 +109,23 @@ function mapEvent(ev, cfg, order) {
   // Status asli dari ESPN (live / selesai) + skor
   const t = (ev.status || {}).type || {};
   let st;
-  if (t.state === 'in') st = { s: 'live', min: parseInt((ev.status || {}).displayClock, 10) || 0 };
-  else if (t.state === 'post') st = { s: 'ft' };
+  if (t.state === 'in') st = { s: 'live', min: parseInt((ev.status || {}).displayClock, 10) || 0, detail: t.shortDetail || '' };
+  else if (t.state === 'post') st = { s: 'ft', detail: t.shortDetail || 'FT' };
   else st = { s: 'up' };
 
   return {
     id: 'espn-' + ev.id, league: cfg.name, country: cfg.country, group: cfg.group, order,
     ts: Date.parse(ev.date), home: (home.team || {}).displayName || '-', away: (away.team || {}).displayName || '-',
+    homeLogo: (home.team || {}).logo || '', awayLogo: (away.team || {}).logo || '',
     side, hdp, ou, odds: odds.some(Boolean) ? odds : [0, 0, 0],
     st, score: t.state === 'pre' ? null : [home.score, away.score]
   };
 }
 
-// Tanggal YYYYMMDD (UTC) dari kemarin s/d +DAYS agar semua jam WIB tercakup
+// Tanggal YYYYMMDD (UTC) dari -(HISTORY+1) s/d +DAYS agar riwayat 3 hari & semua jam WIB tercakup
 function ymdList() {
   const out = [];
-  for (let d = -1; d <= DAYS; d++) out.push(new Date(Date.now() + d * 864e5).toISOString().slice(0, 10).replace(/-/g, ''));
+  for (let d = -(HISTORY + 1); d <= DAYS; d++) out.push(new Date(Date.now() + d * 864e5).toISOString().slice(0, 10).replace(/-/g, ''));
   return out;
 }
 
@@ -134,7 +136,7 @@ async function fetchLive() {
   const failed = results.filter(r => r.status === 'rejected').map(r => r.reason);
   if (failed.length === tasks.length) throw failed[0];
 
-  const from = Date.now() - 36 * 36e5, to = Date.now() + (DAYS + 1) * 864e5;
+  const from = Date.now() - (HISTORY + 1) * 864e5, to = Date.now() + (DAYS + 1) * 864e5;
   const seen = new Set(), events = [];
   results.forEach((r, i) => {
     if (r.status !== 'fulfilled') return;
@@ -183,7 +185,7 @@ function mockPayload(reason) {
     return {
       id: 'mock-' + i, league: r[1], country: cfg.country, group: cfg.group, order,
       ts: Date.parse(`${dayOf(r[0])}T${r[2]}:00+07:00`), home: r[3], away: r[4],
-      side: r[5], hdp: r[6], ou: r[7], odds: [r[8], r[9], r[10]]
+      homeLogo: '', awayLogo: '', side: r[5], hdp: r[6], ou: r[7], odds: [r[8], r[9], r[10]]
     };
   }).sort((a, b) => a.ts - b.ts);
   return { source: 'mock', notice: reason + ' Menampilkan data contoh.', updatedAt: new Date().toISOString(), events };
