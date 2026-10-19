@@ -74,6 +74,11 @@ tailwind.config = { theme: { extend: {
     onerror="this.remove()">
 </div>
 
+<!-- 3b. MENU LIGA (di bawah banner) -->
+<nav class="max-w-5xl mx-auto px-3 pt-3" aria-label="Pilih liga">
+  <div id="leagues" class="no-sb flex gap-1.5 overflow-x-auto pb-1"></div>
+</nav>
+
 <!-- SIDEBAR KIRI (muncul dari tombol burger) -->
 <div id="ovl" class="fixed inset-0 z-40 bg-black/50 opacity-0 pointer-events-none transition-opacity"></div>
 <aside id="side" aria-label="Menu" class="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] -translate-x-full transition-transform bg-bg text-white border-r border-line flex flex-col">
@@ -86,10 +91,6 @@ tailwind.config = { theme: { extend: {
       <h2 class="mb-2 text-[11px] font-bold uppercase tracking-wider text-mute">Jadwal</h2>
       <div id="days" class="flex flex-col gap-1.5" role="tablist" aria-label="Pilih tanggal"></div>
       <div id="hdays" class="hidden mt-2 grid grid-cols-3 gap-1.5" aria-label="Pilih tanggal riwayat"></div>
-    </section>
-    <section>
-      <h2 class="mb-2 text-[11px] font-bold uppercase tracking-wider text-mute">Liga</h2>
-      <div id="leagues" class="flex flex-col gap-1.5" aria-label="Pilih liga"></div>
     </section>
   </div>
 </aside>
@@ -114,7 +115,48 @@ tailwind.config = { theme: { extend: {
 /* ================= KONFIGURASI ================= */
 const TZ = 'Asia/Jakarta';
 // Pill filter. Data liga (nama, negara, grup) datang dari server: api/odds.js
-const FILTERS = ['Semua Liga', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Liga Asia', 'Champions League'];
+// Daftar liga lengkap ala ESPN. Kata kunci dicocokkan ke nama liga / grup dari server.
+const LEAGUES = [
+  ['Semua Liga', []],
+  ['Premier League', ['premier league','english premier']],
+  ['Champions League', ['champions league']],
+  ['Europa League', ['europa league']],
+  ['Conference League', ['conference league']],
+  ['La Liga', ['la liga','laliga','primera division']],
+  ['Serie A', ['serie a','italian serie a']],
+  ['Bundesliga', ['bundesliga']],
+  ['Ligue 1', ['ligue 1']],
+  ['Eredivisie', ['eredivisie']],
+  ['Liga Portugal', ['primeira liga','liga portugal']],
+  ['Scottish Premiership', ['scottish premiership']],
+  ['Süper Lig', ['super lig','süper lig','turkish']],
+  ['Championship', ['championship']],
+  ['FA Cup', ['fa cup']],
+  ['Carabao Cup', ['carabao','efl cup','league cup']],
+  ['Copa del Rey', ['copa del rey']],
+  ['Coppa Italia', ['coppa italia']],
+  ['DFB Pokal', ['dfb pokal','dfb-pokal']],
+  ['MLS', ['mls','major league soccer']],
+  ['Liga MX', ['liga mx']],
+  ['Brasileirão', ['brasileir','serie a brazil','brazil']],
+  ['Liga Argentina', ['argentin']],
+  ['Copa Libertadores', ['libertadores']],
+  ['Saudi Pro League', ['saudi']],
+  ['Liga 1 Indonesia', ['indonesia','liga 1 indonesia','bri liga']],
+  ['J1 League', ['j1','j. league','j-league','japan']],
+  ['K League 1', ['k league','korea']],
+  ['A-League', ['a-league','australia']],
+  ['Liga Asia', ['afc','asia']],
+  ['Piala Dunia', ['world cup','fifa']],
+  ['Euro / UEFA Nations', ['euro','nations league']],
+];
+const FILTERS = LEAGUES.map(l => l[0]);
+const KW = Object.fromEntries(LEAGUES);
+const inLeague = m => {
+  if inLeague(m) return true;
+  const t = ((m.league || '') + ' ' + (m.country || '')).toLowerCase();
+  return (KW[state.league] || []).some(k => t.includes(k));
+};
 const DAY_LABELS = ['Hari Ini', 'Besok', 'Lusa'];
 const TABS = ['live', 0, 1, 2, 'hist'];   // Live, Hari Ini, Besok, Lusa, Riwayat
 const HIST_DAYS = [-1, -2, -3];           // Riwayat hanya 3 hari terakhir
@@ -199,7 +241,7 @@ function renderFilters() {
       class="rounded-lg border py-1.5 text-xs font-semibold transition ${pill(state.hday === o)}">${o === -1 ? 'Kemarin' : hDate(o)}</button>`).join('');
   $('#leagues').innerHTML = FILTERS.map(l => `
     <button data-league="${l}" aria-pressed="${state.league === l}"
-      class="w-full text-left rounded-lg border px-3 py-2 text-sm font-semibold transition ${pill(state.league === l)}">${l}</button>`).join('');
+      class="shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-sm font-semibold transition ${pill(state.league === l)}">${l}</button>`).join('');
   const tl = state.tab === 'live' ? 'Live' : state.tab === 'hist' ? 'Riwayat · ' + (state.hday === -1 ? 'Kemarin' : hDate(state.hday)) : DAY_LABELS[state.tab] + ' · ' + fmtDate(state.tab);
   $('#cur').textContent = tl + (state.league !== 'Semua Liga' ? ' · ' + state.league : '');
 }
@@ -293,7 +335,7 @@ function renderList() {
   if (!ms.length) {
     const cur = dateStr(state.tab);
     const next = (state.all || []).find(m => m.ts > Date.now()
-      && (state.league === 'Semua Liga' || m.group === state.league)
+      && inLeague(m)
       && new Date(m.ts).toLocaleDateString('en-CA', { timeZone: TZ }) > cur);
     const hint = next ? `<p class="mt-2 text-xs">Pertandingan berikutnya: ${new Date(next.ts).toLocaleDateString('id-ID', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' })}</p>` : '';
     $('#list').innerHTML = `<div class="rounded-xl border border-lline bg-lcard p-8 text-center text-sm text-lmute">Tidak ada pertandingan. Ubah tanggal, liga, atau kata kunci pencarian.${hint}</div>`;
@@ -385,7 +427,7 @@ $('#curbtn').addEventListener('click', () => side(true));
 $('#sclose').addEventListener('click', () => side(false));
 $('#ovl').addEventListener('click', () => side(false));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') side(false); });
-document.addEventListener('click', e => { if (e.target.closest('#side [data-tab]:not([data-tab="hist"]), #side [data-hday], #side [data-league]')) side(false); });
+document.addEventListener('click', e => { if (e.target.closest('#side [data-tab]:not([data-tab="hist"]), #side [data-hday]')) side(false); });
 $('#reload').addEventListener('click', () => refresh(true));
 $('#q').addEventListener('input', e => { state.q = e.target.value; renderList(); });
 
