@@ -20,17 +20,9 @@ tailwind.config = { theme: { extend: {
 </script>
 <style>
   body { background:#e6f5da; color:#1f2d1a; font-family:'Plus Jakarta Sans',Inter,system-ui,sans-serif; }
-  /* Background header: gambar + lapisan hijau gelap agar teks tetap terbaca.
-     Atur angka .45 (atas) dan .88 (bawah): makin KECIL = gambar makin terang/jelas. */
-  #hdr {
-    color: #fff;
-    background-color: #142811;
-    background-image:
-      linear-gradient(180deg, rgba(10,20,8,.45) 0%, rgba(20,40,17,.88) 100%),
-      url('https://mobile.bonsaibolamen.com/apps/img/165/slider/bonsai1.png');
-    background-size: cover;
-    background-position: center;
-  }
+  body.lock { overflow:hidden; }
+  #side.open { transform:translateX(0); }
+  #ovl.open { opacity:1; pointer-events:auto; }
   .tnum { font-variant-numeric: tabular-nums; }
   .no-sb { scrollbar-width:none; } .no-sb::-webkit-scrollbar { display:none; }
   .match { cursor:pointer; transition: background .15s; }
@@ -46,31 +38,67 @@ tailwind.config = { theme: { extend: {
 </head>
 <body class="min-h-screen">
 
-<header id="hdr" class="sticky top-0 z-20 border-b border-line">
-  <div class="max-w-4xl mx-auto px-3 pt-3 pb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
-    <h1 class="shrink-0 flex items-center">
+<!-- 1. TOPBAR: burger + logo + jam -->
+<header id="top" class="sticky top-0 z-30 bg-card border-b border-line text-white">
+  <div class="max-w-5xl mx-auto px-3 h-14 flex items-center gap-3">
+    <button id="burger" aria-label="Buka menu" aria-controls="side" aria-expanded="false"
+      class="shrink-0 grid place-items-center h-10 w-10 rounded-lg border border-line bg-card2 hover:border-lime">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <h1 class="min-w-0 flex items-center">
       <img src="https://bonsaibola5.org/Images/logo.png" alt="Bonsai Bola" decoding="async"
-        class="h-9 w-auto max-w-[170px] object-contain sm:h-11 sm:max-w-[240px]"
+        class="h-8 w-auto max-w-[160px] object-contain sm:h-10 sm:max-w-[220px]"
         onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'text-xl font-extrabold tracking-tight text-lime',textContent:'BONSAI BOLA'}))">
     </h1>
-    <span class="ml-auto order-2 sm:order-3 inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 text-xs tnum">
+    <span class="ml-auto shrink-0 inline-flex items-center gap-2 rounded-full border border-line bg-card2 px-3 py-1 text-xs tnum">
       <span class="text-mute">WIB</span><span id="clock" class="font-semibold">--:--:--</span>
     </span>
-    <label class="order-3 sm:order-2 w-full sm:w-auto sm:flex-1 sm:max-w-xs sm:ml-auto">
-      <span class="sr-only">Cari tim atau liga</span>
-      <input id="q" type="search" placeholder="Cari tim atau liga" autocomplete="off"
-        class="w-full rounded-lg border border-line bg-card px-3 py-2 text-sm placeholder:text-mute focus:border-lime focus:outline-none">
-    </label>
-  </div>
-
-  <div class="max-w-4xl mx-auto px-3 pb-3 space-y-2">
-    <div id="days" class="grid grid-cols-5 gap-1.5 sm:gap-2" role="tablist" aria-label="Pilih tanggal"></div>
-    <div id="hdays" class="hidden grid grid-cols-3 gap-2" aria-label="Pilih tanggal riwayat"></div>
-    <div id="leagues" class="flex gap-2 overflow-x-auto no-sb -mx-3 px-3" aria-label="Pilih liga"></div>
   </div>
 </header>
 
-<main class="max-w-4xl mx-auto px-3 py-4">
+<!-- 2. KOLOM PENCARIAN -->
+<div class="bg-bg border-b border-line">
+  <div class="max-w-5xl mx-auto px-3 py-2.5">
+    <label class="block">
+      <span class="sr-only">Cari tim atau liga</span>
+      <input id="q" type="search" placeholder="Cari tim atau liga" autocomplete="off"
+        class="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-sm text-white placeholder:text-mute focus:border-lime focus:outline-none">
+    </label>
+  </div>
+</div>
+
+<!-- 3. BANNER -->
+<div class="max-w-5xl mx-auto px-3 pt-3">
+  <img id="hero" src="https://mobile.bonsaibolamen.com/apps/img/165/slider/bonsai1.png" alt="Bonsai Bola"
+    class="w-full h-28 sm:h-44 object-cover rounded-xl border border-lline" decoding="async"
+    onerror="this.remove()">
+</div>
+
+<!-- SIDEBAR KIRI (muncul dari tombol burger) -->
+<div id="ovl" class="fixed inset-0 z-40 bg-black/50 opacity-0 pointer-events-none transition-opacity"></div>
+<aside id="side" aria-label="Menu" class="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] -translate-x-full transition-transform bg-bg text-white border-r border-line flex flex-col">
+  <div class="h-14 px-4 flex items-center justify-between border-b border-line shrink-0">
+    <span class="font-extrabold tracking-tight text-lime">MENU</span>
+    <button id="sclose" aria-label="Tutup menu" class="grid place-items-center h-9 w-9 rounded-lg border border-line hover:border-lime">✕</button>
+  </div>
+  <div class="flex-1 overflow-y-auto p-4 space-y-5">
+    <section>
+      <h2 class="mb-2 text-[11px] font-bold uppercase tracking-wider text-mute">Jadwal</h2>
+      <div id="days" class="flex flex-col gap-1.5" role="tablist" aria-label="Pilih tanggal"></div>
+      <div id="hdays" class="hidden mt-2 grid grid-cols-3 gap-1.5" aria-label="Pilih tanggal riwayat"></div>
+    </section>
+    <section>
+      <h2 class="mb-2 text-[11px] font-bold uppercase tracking-wider text-mute">Liga</h2>
+      <div id="leagues" class="flex flex-col gap-1.5" aria-label="Pilih liga"></div>
+    </section>
+  </div>
+</aside>
+
+<main class="max-w-5xl mx-auto px-3 py-4">
+  <div class="mb-2 flex items-center justify-between gap-2">
+    <button id="curbtn" class="min-w-0 inline-flex items-center gap-2 rounded-full bg-ink text-white px-3.5 py-1.5 text-sm font-semibold">
+      <span id="cur" class="truncate">Hari Ini</span><span class="text-lime text-xs shrink-0">▾ ubah</span></button>
+  </div>
   <div class="mb-3 flex items-center justify-between gap-2 text-xs text-lmute">
     <span id="upd">Memuat…</span>
     <button id="reload" class="shrink-0 rounded-full border border-lline bg-lcard px-3 py-1 font-semibold text-ink hover:bg-lhead">↻ Perbarui</button>
@@ -161,8 +189,8 @@ function renderFilters() {
     else if (t === 'hist') { label = 'Riwayat'; sub = '3 hari'; }
     else { label = DAY_LABELS[t]; sub = fmtDate(t); }
     return `<button role="tab" aria-selected="${on}" data-tab="${t}"
-      class="tabbtn rounded-lg border px-1 py-2 text-[13px] sm:text-sm font-semibold leading-tight transition ${pill(on)}">
-      ${label}<span class="block text-[10px] sm:text-[11px] font-medium ${subCls(on)}">${sub}</span></button>`;
+      class="w-full flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm font-semibold transition ${pill(on)}">
+      ${label}<span class="text-[11px] font-medium ${subCls(on)}">${sub}</span></button>`;
   }).join('');
   const hd = $('#hdays');
   hd.classList.toggle('hidden', state.tab !== 'hist');
@@ -171,7 +199,9 @@ function renderFilters() {
       class="rounded-lg border py-1.5 text-xs font-semibold transition ${pill(state.hday === o)}">${o === -1 ? 'Kemarin' : hDate(o)}</button>`).join('');
   $('#leagues').innerHTML = FILTERS.map(l => `
     <button data-league="${l}" aria-pressed="${state.league === l}"
-      class="shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-semibold transition ${pill(state.league === l)}">${l}</button>`).join('');
+      class="w-full text-left rounded-lg border px-3 py-2 text-sm font-semibold transition ${pill(state.league === l)}">${l}</button>`).join('');
+  const tl = state.tab === 'live' ? 'Live' : state.tab === 'hist' ? 'Riwayat · ' + (state.hday === -1 ? 'Kemarin' : hDate(state.hday)) : DAY_LABELS[state.tab] + ' · ' + fmtDate(state.tab);
+  $('#cur').textContent = tl + (state.league !== 'Semua Liga' ? ' · ' + state.league : '');
 }
 
 // Warna nama tim (mengikuti referensi): tim pemberi voor = biru, lawannya = merah.
@@ -345,6 +375,17 @@ document.addEventListener('keydown', e => {
   const m = e.target.closest && e.target.closest('[data-id]');
   if (m && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); copyMatch(m.dataset.id); }
 });
+/* ===== SIDEBAR ===== */
+function side(open) {
+  $('#side').classList.toggle('open', open); $('#ovl').classList.toggle('open', open);
+  document.body.classList.toggle('lock', open); $('#burger').setAttribute('aria-expanded', open);
+}
+$('#burger').addEventListener('click', () => side(true));
+$('#curbtn').addEventListener('click', () => side(true));
+$('#sclose').addEventListener('click', () => side(false));
+$('#ovl').addEventListener('click', () => side(false));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') side(false); });
+document.addEventListener('click', e => { if (e.target.closest('#side [data-tab]:not([data-tab="hist"]), #side [data-hday], #side [data-league]')) side(false); });
 $('#reload').addEventListener('click', () => refresh(true));
 $('#q').addEventListener('input', e => { state.q = e.target.value; renderList(); });
 
