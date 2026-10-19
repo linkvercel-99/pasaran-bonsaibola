@@ -38,6 +38,9 @@ tailwind.config = { theme: { extend: {
   :focus-visible { outline:2px solid #4ade80; outline-offset:2px; }
   .dot { animation: pulse 1.4s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity:.25; } }
+  .logo { width:22px; height:22px; object-fit:contain; flex-shrink:0; }
+  .ini { width:22px; height:22px; flex-shrink:0; border-radius:9999px; background:#d3ebc2; color:#1f2d1a; font-size:9px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+  @media (max-width:380px){ .tabbtn{ font-size:12px; } }
   @media (prefers-reduced-motion: reduce) { .dot { animation:none; } }
 </style>
 </head>
@@ -61,15 +64,20 @@ tailwind.config = { theme: { extend: {
   </div>
 
   <div class="max-w-4xl mx-auto px-3 pb-3 space-y-2">
-    <div id="days" class="grid grid-cols-3 gap-2" role="tablist" aria-label="Pilih tanggal"></div>
+    <div id="days" class="grid grid-cols-5 gap-1.5 sm:gap-2" role="tablist" aria-label="Pilih tanggal"></div>
+    <div id="hdays" class="hidden grid grid-cols-3 gap-2" aria-label="Pilih tanggal riwayat"></div>
     <div id="leagues" class="flex gap-2 overflow-x-auto no-sb -mx-3 px-3" aria-label="Pilih liga"></div>
   </div>
 </header>
 
 <main class="max-w-4xl mx-auto px-3 py-4">
+  <div class="mb-3 flex items-center justify-between gap-2 text-xs text-lmute">
+    <span id="upd">Memuat…</span>
+    <button id="reload" class="shrink-0 rounded-full border border-lline bg-lcard px-3 py-1 font-semibold text-ink hover:bg-lhead">↻ Perbarui</button>
+  </div>
   <div id="banner" class="hidden mb-3 rounded-lg border border-lline bg-lhead px-3 py-2 text-xs text-ink"></div>
   <div id="list" class="space-y-4" aria-live="polite"></div>
-  <p class="mt-8 text-center text-xs text-lmute">Odds hanya sebagai informasi. Ketuk pertandingan untuk menyalin pasaran.</p>
+  <p class="mt-8 text-center text-xs text-lmute">Odds hanya sebagai informasi. Data diperbarui otomatis setiap 10 menit. Ketuk pertandingan untuk menyalin pasaran.</p>
 </main>
 
 <div id="toast" class="fixed left-1/2 bottom-6 z-30 -translate-x-1/2 translate-y-4 opacity-0 pointer-events-none transition rounded-full bg-lime px-4 py-2 text-sm font-semibold text-card shadow-lg max-w-[90vw] truncate" role="status"></div>
@@ -80,6 +88,9 @@ const TZ = 'Asia/Jakarta';
 // Pill filter. Data liga (nama, negara, grup) datang dari server: api/odds.js
 const FILTERS = ['Semua Liga', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Liga Asia', 'Champions League'];
 const DAY_LABELS = ['Hari Ini', 'Besok', 'Lusa'];
+const TABS = ['live', 0, 1, 2, 'hist'];   // Live, Hari Ini, Besok, Lusa, Riwayat
+const HIST_DAYS = [-1, -2, -3];           // Riwayat hanya 3 hari terakhir
+const REFRESH_MS = 10 * 60 * 1000;        // update data setiap 10 menit
 
 /* ================= HELPERS ================= */
 const $ = s => document.querySelector(s);
@@ -89,7 +100,7 @@ const fmtTime = ts => new Date(ts).toLocaleTimeString('en-GB', { timeZone: TZ, h
 const fmtDate = off => new Date(Date.now() + off * 864e5).toLocaleDateString('id-ID', { timeZone: TZ, day: 'numeric', month: 'short' });
 const fmtHdp = (v, gives) => (v === 0 ? '0' : (gives ? '-' : '+') + v);
 
-const state = { day: 0, league: 'Semua Liga', q: '', data: {}, demo: false, notice: '', error: '', req: null };
+const state = { tab: 0, hday: -1, all: [], updatedAt: 0, day: 0, league: 'Semua Liga', q: '', data: {}, demo: false, notice: '', error: '', req: null };
 
 /* ================= DATA LAYER ================= */
 // Semua data diambil dari endpoint internal. API key hanya ada di server (api/odds.js).
@@ -101,25 +112,23 @@ async function fetchData() {
   return res.json();
 }
 
-async function loadDay(off) {
-  if (state.data[off]) return;
+const dayOf = ts => new Date(ts).toLocaleDateString('en-CA', { timeZone: TZ });
+
+// Ambil data dari server. silent=true -> tanpa tampilan "Memuat" (dipakai auto-update 10 menit)
+async function loadData(force) {
+  if (state.all.length && !force) return;
   try {
-    if (!state.req) state.req = fetchData();
-    const p = await state.req;
-    const events = p.events || [];
-    state.all = events;
-    DAY_LABELS.forEach((_, o) => {
-      state.data[o] = events.filter(m => new Date(m.ts).toLocaleDateString('en-CA', { timeZone: TZ }) === dateStr(o));
-    });
+    const p = await fetchData();
+    state.all = p.events || [];
     state.demo = p.source === 'mock';
     state.notice = p.notice || '';
     state.error = '';
+    state.updatedAt = Date.now();
   } catch (e) {
-    state.req = null;
-    state.error = 'Tidak bisa memuat data dari server (' + e.message + ').';
+    if (!state.all.length) state.error = 'Tidak bisa memuat data dari server (' + e.message + ').';
+    else state.notice = 'Gagal memperbarui data, menampilkan data terakhir.';
   }
 }
-
 /* ================= STATUS ================= */
 function status(m) {
   if (m.st) return m.st;
@@ -130,29 +139,56 @@ function status(m) {
 }
 function statusHtml(m) {
   const s = status(m);
-  if (s.s === 'live') return `<span class="inline-flex items-center gap-1 rounded bg-nred/10 px-1.5 py-0.5 text-[11px] font-bold text-nred"><span class="dot h-1.5 w-1.5 rounded-full bg-nred"></span>Live${s.min ? ' ' + s.min + "'" : ''}</span>`;
-  if (s.s === 'ft') return `<span class="text-[11px] text-lmute">Selesai</span>`;
+  if (s.s === 'live') {
+    const lbl = s.detail === 'HT' ? 'HT' : 'Live' + (s.min ? ' ' + s.min + "'" : '');
+    return `<span class="inline-flex items-center gap-1 rounded bg-nred/10 px-1.5 py-0.5 text-[11px] font-bold text-nred"><span class="dot h-1.5 w-1.5 rounded-full bg-nred"></span>${lbl}</span>`;
+  }
+  if (s.s === 'ft') return `<span class="inline-block rounded bg-ink/10 px-1.5 py-0.5 text-[11px] font-bold text-ink">${esc(s.detail && s.detail !== 'FT' ? s.detail : 'FT')}</span>`;
   return `<span class="text-[11px] text-lmute">Upcoming</span>`;
 }
 
 /* ================= RENDER ================= */
+const pill = on => on ? 'bg-lime border-lime text-card' : 'bg-card border-line text-white hover:border-lime/60';
+const subCls = on => on ? 'text-card/70' : 'text-mute';
+const hDate = off => new Date(Date.now() + off * 864e5).toLocaleDateString('id-ID', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short' });
+function liveCount() { return state.all.filter(m => status(m).s === 'live').length; }
+
 function renderFilters() {
-  $('#days').innerHTML = DAY_LABELS.map((l, i) => `
-    <button role="tab" aria-selected="${state.day === i}" data-day="${i}"
-      class="rounded-lg border py-2 text-sm font-semibold transition ${state.day === i ? 'bg-lime border-lime text-card' : 'bg-card border-line text-white hover:border-lime/60'}">
-      ${l}<span class="block text-[11px] font-medium ${state.day === i ? 'text-card/70' : 'text-mute'}">${fmtDate(i)}</span>
-    </button>`).join('');
+  $('#days').innerHTML = TABS.map(t => {
+    const on = state.tab === t;
+    let label, sub;
+    if (t === 'live') { label = '<span class="inline-flex items-center gap-1"><span class="dot h-1.5 w-1.5 rounded-full bg-nred"></span>Live</span>'; sub = liveCount() + ' laga'; }
+    else if (t === 'hist') { label = 'Riwayat'; sub = '3 hari'; }
+    else { label = DAY_LABELS[t]; sub = fmtDate(t); }
+    return `<button role="tab" aria-selected="${on}" data-tab="${t}"
+      class="tabbtn rounded-lg border px-1 py-2 text-[13px] sm:text-sm font-semibold leading-tight transition ${pill(on)}">
+      ${label}<span class="block text-[10px] sm:text-[11px] font-medium ${subCls(on)}">${sub}</span></button>`;
+  }).join('');
+  const hd = $('#hdays');
+  hd.classList.toggle('hidden', state.tab !== 'hist');
+  hd.innerHTML = HIST_DAYS.map(o => `
+    <button data-hday="${o}" aria-pressed="${state.hday === o}"
+      class="rounded-lg border py-1.5 text-xs font-semibold transition ${pill(state.hday === o)}">${o === -1 ? 'Kemarin' : hDate(o)}</button>`).join('');
   $('#leagues').innerHTML = FILTERS.map(l => `
     <button data-league="${l}" aria-pressed="${state.league === l}"
-      class="shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-semibold transition ${state.league === l ? 'bg-lime border-lime text-card' : 'bg-card border-line text-white hover:border-lime/60'}">${l}</button>`).join('');
+      class="shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-semibold transition ${pill(state.league === l)}">${l}</button>`).join('');
 }
 
 // Warna nama tim (mengikuti referensi): tim pemberi voor = biru, lawannya = merah.
 // Voor 0 / tanpa voor: tuan rumah biru, tamu merah.
-function teamRow(name, blue, gives, val) {
+function logoHtml(src, name) {
+  const ini = esc(String(name).split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase());
+  if (!src) return `<span class="ini">${ini}</span>`;
+  return `<img class="logo" src="${esc(src)}" alt="" loading="lazy" decoding="async"
+    onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="ini" hidden>${ini}</span>`;
+}
+
+function teamRow(name, logo, blue, gives, val, score, win) {
   return `<div class="flex items-center gap-2 min-w-0">
+    ${logoHtml(logo, name)}
     <span class="truncate text-[15px] font-bold ${blue ? 'text-nblue' : 'text-nred'}">${esc(name)}</span>
     ${gives && val !== 0 ? `<span class="shrink-0 rounded bg-lime px-1.5 py-0.5 text-[11px] font-extrabold text-card tnum">${fmtHdp(val, true)}</span>` : ''}
+    ${score != null ? `<span class="ml-auto shrink-0 min-w-[1.6rem] rounded bg-ink/5 px-1.5 text-center text-base tnum ${win ? 'font-extrabold text-ink' : 'font-semibold text-lmute'}">${esc(score)}</span>` : ''}
   </div>`;
 }
 
@@ -176,25 +212,34 @@ function matchHtml(m) {
     <div class="grid grid-cols-3 text-[10px] text-lmute"><span>1</span><span>X</span><span>2</span></div>
     <div class="grid grid-cols-3 text-sm font-bold tnum">${m.odds.map(o => `<span class="${o && o === min ? 'text-nred' : 'text-oblue'}">${o ? o.toFixed(2) : '-'}</span>`).join('')}</div>
   </div>`;
+  const sc = m.score && m.score[0] != null && m.score[0] !== '' ? m.score : null;
+  const hs = sc ? +sc[0] : 0, as = sc ? +sc[1] : 0;
   return `<div class="match sm:flex sm:items-center border-t border-lline first:border-t-0" role="button" tabindex="0" data-id="${m.id}" aria-label="Salin pasaran ${esc(m.home)} vs ${esc(m.away)}">
     <div class="flex items-center gap-3 px-3 pt-3 sm:py-3 sm:flex-1 min-w-0">
       <div class="w-14 shrink-0 text-center space-y-0.5">
+        ${state.tab === 'hist' || state.tab === 'live' ? `<div class="text-[10px] text-lmute">${new Date(m.ts).toLocaleDateString('id-ID', { timeZone: TZ, day: 'numeric', month: 'short' })}</div>` : ''}
         <div class="text-sm font-bold tnum">${fmtTime(m.ts)}</div>${statusHtml(m)}
       </div>
-      <div class="min-w-0 flex-1 space-y-1">${teamRow(m.home, homeBlue, hasH && hg, m.hdp)}${teamRow(m.away, !homeBlue, hasH && !hg, m.hdp)}</div>
+      <div class="min-w-0 flex-1 space-y-1">${teamRow(m.home, m.homeLogo, homeBlue, hasH && hg, m.hdp, sc && sc[0], sc && hs >= as)}${teamRow(m.away, m.awayLogo, !homeBlue, hasH && !hg, m.hdp, sc && sc[1], sc && as >= hs)}</div>
     </div>
-    <div class="mt-2 sm:mt-0 grid grid-cols-[1fr_1fr_1.7fr] divide-x divide-lline border-t border-lline sm:border-t-0 sm:w-[340px] sm:shrink-0">
+    <div class="mt-2 sm:mt-0 grid grid-cols-[1fr_1fr_1.7fr] divide-x divide-lline border-t border-lline sm:border-t-0 sm:w-[300px] md:w-[340px] sm:shrink-0">
       ${hdpCell}${ouCell}${oddsCell}
     </div>
   </div>`;
 }
 
+function baseList() {
+  if (state.tab === 'live') return state.all.filter(m => status(m).s === 'live');
+  if (state.tab === 'hist') return state.all.filter(m => dayOf(m.ts) === dateStr(state.hday) && status(m).s === 'ft');
+  return state.all.filter(m => dayOf(m.ts) === dateStr(state.tab));
+}
+
 function visible() {
   const q = state.q.trim().toLowerCase();
-  return (state.data[state.day] || [])
+  return baseList()
     .filter(m => state.league === 'Semua Liga' || m.group === state.league)
     .filter(m => !q || [m.home, m.away, m.league].some(t => t.toLowerCase().includes(q)))
-    .sort((a, b) => a.ts - b.ts);
+    .sort((a, b) => state.tab === 'hist' ? b.ts - a.ts : a.ts - b.ts);
 }
 
 function renderList() {
@@ -211,8 +256,12 @@ function renderList() {
   b.textContent = state.notice || 'Mode demo: menampilkan data contoh.';
 
   const ms = visible();
+  if (!ms.length && (state.tab === 'live' || state.tab === 'hist')) {
+    $('#list').innerHTML = `<div class="rounded-xl border border-lline bg-lcard p-8 text-center text-sm text-lmute">${state.tab === 'live' ? 'Belum ada pertandingan yang sedang berlangsung.' : 'Tidak ada hasil pertandingan untuk tanggal ini.'}</div>`;
+    return;
+  }
   if (!ms.length) {
-    const cur = dateStr(state.day);
+    const cur = dateStr(state.tab);
     const next = (state.all || []).find(m => m.ts > Date.now()
       && (state.league === 'Semua Liga' || m.group === state.league)
       && new Date(m.ts).toLocaleDateString('en-CA', { timeZone: TZ }) > cur);
@@ -233,11 +282,20 @@ function renderList() {
     </section>`).join('');
 }
 
-async function refresh() {
+function renderUpd() {
+  if (!state.updatedAt) return;
+  const left = Math.max(0, REFRESH_MS - (Date.now() - state.updatedAt));
+  const mm = Math.floor(left / 6e4), ss = String(Math.floor(left / 1e3) % 60).padStart(2, '0');
+  $('#upd').textContent = `Update ${fmtTime(state.updatedAt)} WIB · berikutnya ${mm}:${ss}`;
+}
+
+function renderAll() { renderFilters(); renderList(); renderUpd(); }
+
+async function refresh(force) {
   renderFilters();
-  $('#list').innerHTML = `<div class="rounded-xl border border-lline bg-lcard p-8 text-center text-sm text-lmute">Memuat pasaran…</div>`;
-  await loadDay(state.day);
-  renderList();
+  if (!state.all.length) $('#list').innerHTML = `<div class="rounded-xl border border-lline bg-lcard p-8 text-center text-sm text-lmute">Memuat pasaran…</div>`;
+  await loadData(force);
+  renderAll();
 }
 
 /* ================= COPY PASARAN ================= */
@@ -268,7 +326,7 @@ function toast(msg) {
 }
 
 function copyMatch(id) {
-  const m = (state.data[state.day] || []).find(x => x.id === id);
+  const m = state.all.find(x => x.id === id);
   if (!m) return;
   const t = marketText(m);
   copyText(t).then(() => toast('Tersalin: ' + t));
@@ -276,9 +334,10 @@ function copyMatch(id) {
 
 /* ================= EVENTS ================= */
 document.addEventListener('click', e => {
-  const r = e.target.closest('[data-retry]'), d = e.target.closest('[data-day]'), l = e.target.closest('[data-league]'), m = e.target.closest('[data-id]');
-  if (r) { state.error = ''; state.req = null; state.data = {}; refresh(); }
-  else if (d) { state.day = +d.dataset.day; refresh(); }
+  const r = e.target.closest('[data-retry]'), d = e.target.closest('[data-tab]'), hd = e.target.closest('[data-hday]'), l = e.target.closest('[data-league]'), m = e.target.closest('[data-id]');
+  if (r) { state.error = ''; refresh(true); }
+  else if (d) { const t = d.dataset.tab; state.tab = isNaN(+t) ? t : +t; renderAll(); window.scrollTo({ top: 0 }); }
+  else if (hd) { state.hday = +hd.dataset.hday; renderAll(); }
   else if (l) { state.league = l.dataset.league; renderFilters(); renderList(); }
   else if (m) copyMatch(m.dataset.id);
 });
@@ -286,14 +345,18 @@ document.addEventListener('keydown', e => {
   const m = e.target.closest && e.target.closest('[data-id]');
   if (m && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); copyMatch(m.dataset.id); }
 });
+$('#reload').addEventListener('click', () => refresh(true));
 $('#q').addEventListener('input', e => { state.q = e.target.value; renderList(); });
 
 /* ================= JAM WIB ================= */
 function tick() {
   $('#clock').textContent = new Date().toLocaleTimeString('en-GB', { timeZone: TZ, hour12: false });
 }
-tick(); setInterval(tick, 1000);
-setInterval(() => { if (state.data[state.day]) renderList(); }, 60000); // perbarui status Live
+tick(); setInterval(() => { tick(); renderUpd(); }, 1000);
+setInterval(() => refresh(true), REFRESH_MS);                     // auto-update data tiap 10 menit
+document.addEventListener('visibilitychange', () => {             // tab dibuka lagi & data sudah lewat 10 menit
+  if (!document.hidden && Date.now() - state.updatedAt >= REFRESH_MS) refresh(true);
+});
 
 refresh();
 </script>
