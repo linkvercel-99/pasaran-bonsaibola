@@ -182,11 +182,16 @@ async function loadData(force) {
   if (state.all.length && !force) return;
   try {
     const p = await fetchData();
-    state.all = p.events || [];
-    state.demo = p.source === 'mock';
-    state.notice = p.notice || '';
-    state.error = '';
-    state.updatedAt = Date.now();
+
+if (!p || !Array.isArray(p.events)) {
+  throw new Error('Format data API tidak valid: events harus berupa array.');
+}
+
+state.all = p.events;
+state.demo = p.source === 'mock';
+state.notice = p.notice || '';
+state.error = '';
+state.updatedAt = Date.now();
   } catch (e) {
     if (!state.all.length) state.error = 'Tidak bisa memuat data dari server (' + e.message + ').';
     else state.notice = 'Gagal memperbarui data, menampilkan data terakhir.';
@@ -278,11 +283,41 @@ function matchHtml(m) {
   const homeBlue = hasH && m.hdp !== 0 ? hg : true;
   const hdpCell = hasH ? cell('HDP', `<span class="text-ink">${fmtHdp(m.hdp, true)}</span>`, esc(giver)) : cell('HDP', '-', '');
   const ouCell = cell('O/U', m.ou ? esc(m.ou) : '-', '');
-  const min = Math.min(...m.odds.filter(Boolean));
-  const oddsCell = `<div class="px-2 py-2 text-center">
-    <div class="grid grid-cols-3 text-[10px] text-lmute"><span>1</span><span>X</span><span>2</span></div>
-    <div class="grid grid-cols-3 text-sm font-bold tnum">${m.odds.map(o => `<span class="${o && o === min ? 'text-nred' : 'text-oblue'}">${o ? o.toFixed(2) : '-'}</span>`).join('')}</div>
-  </div>`;
+  const odds = Array.isArray(m.odds)
+  ? m.odds.map(value => {
+      if (value === null || value === undefined || value === '') {
+        return null;
+      }
+
+      const number = Number(value);
+      return Number.isFinite(number) && number > 0
+        ? number
+        : null;
+    })
+  : [];
+
+const validOdds = odds.filter(value => value !== null);
+const min = validOdds.length
+  ? Math.min(...validOdds)
+  : null;
+
+const oddsValues = [0, 1, 2].map(index => {
+  const value = odds[index] ?? null;
+  const isLowest = value !== null && min !== null && value === min;
+
+  return `<span class="${isLowest ? 'text-nred' : 'text-oblue'}">${
+    value !== null ? value.toFixed(2) : '-'
+  }</span>`;
+}).join('');
+
+const oddsCell = `<div class="px-2 py-2 text-center">
+  <div class="grid grid-cols-3 text-[10px] text-lmute">
+    <span>1</span><span>X</span><span>2</span>
+  </div>
+  <div class="grid grid-cols-3 text-sm font-bold tnum">
+    ${oddsValues}
+  </div>
+</div>`;
   const sc = m.score && m.score[0] != null && m.score[0] !== '' ? m.score : null;
   const hs = sc ? +sc[0] : 0, as = sc ? +sc[1] : 0;
   return `<div class="match sm:flex sm:items-center border-t border-lline first:border-t-0" role="button" tabindex="0" data-id="${m.id}" aria-label="Salin pasaran ${esc(m.home)} vs ${esc(m.away)}">
@@ -319,7 +354,9 @@ function renderList() {
     b.classList.add('hidden');
     $('#list').innerHTML = `<div class="rounded-xl border border-lline bg-lcard p-8 text-center text-sm">
       <p class="text-lmute">${esc(state.error)}</p>
-      <p class="mt-1 text-xs text-lmute">Jika dijalankan lokal, gunakan `vercel dev`.</p>
+      <p class="mt-1 text-xs text-lmute">
+  Jika dijalankan lokal, gunakan <code>vercel dev</code>.
+</p>
       <button data-retry class="mt-4 rounded-lg bg-lime px-4 py-2 font-semibold text-card">Coba lagi</button></div>`;
     return;
   }
@@ -397,7 +434,7 @@ function toast(msg) {
 }
 
 function copyMatch(id) {
-  const m = state.all.find(x => x.id === id);
+  const m = state.all.find(x => String(x.id) === String(id));
   if (!m) return;
   const t = marketText(m);
   copyText(t).then(() => toast('Tersalin: ' + t));
