@@ -26,33 +26,6 @@
   @media (max-width:380px){ .tabbtn{ font-size:12px; } }
   @media (prefers-reduced-motion: reduce) { .dot { animation:none; } }
 </style>
-<style>
-  /* Tombol Login / Daftar / Betting + tema */
-  .hbtn{display:inline-flex;align-items:center;justify-content:center;border-radius:9999px;padding:6px 12px;font-size:12px;font-weight:800;line-height:1;white-space:nowrap;text-decoration:none;border:1px solid transparent;transition:filter .15s}
-  .hbtn:hover{filter:brightness(1.1)}
-  .hbtn-login{border-color:#4ade80;color:#4ade80;background:transparent}
-  .hbtn-daftar{background:#4ade80;color:#0a1408}
-  .hbtn-theme{width:32px;height:32px;padding:0;border-color:#1f3d1b;background:#183215;color:#fff;font-size:15px;cursor:pointer}
-  .bet-btn{display:block;text-align:center;border-radius:12px;padding:12px 16px;font-weight:800;font-size:15px;letter-spacing:.02em;background:linear-gradient(90deg,#4ade80,#22c55e);color:#0a1408;text-decoration:none;box-shadow:0 4px 14px rgba(34,197,94,.35)}
-  .bet-btn:hover{filter:brightness(1.08)}
-  @media (max-width:520px){ .hbtn{padding:6px 9px;font-size:11px} .hbtn-theme{width:28px;height:28px;padding:0} #clock{font-size:11px} }
-  @media (max-width:400px){ #clock{display:none} }
-  /* Mode gelap */
-  html.dark body{background:#0b1609;color:#e6f2df}
-  html.dark .bg-lcard{background-color:#13240f}
-  html.dark .bg-lhead{background-color:#1c3517}
-  html.dark .border-lline{border-color:#2c4a25}
-  html.dark .divide-lline>*{border-color:#2c4a25 !important}
-  html.dark .text-ink{color:#e6f2df}
-  html.dark .text-lmute{color:#9fb393}
-  html.dark .match:hover{background:#1a3115}
-  html.dark .ini{background:#2c4a25;color:#e6f2df}
-  html.dark .bg-ink\/5{background-color:rgba(230,242,223,.08)}
-  html.dark .bg-ink\/10{background-color:rgba(230,242,223,.12)}
-  html.dark .text-nblue{color:#60a5fa}
-  html.dark .text-oblue{color:#93c5fd}
-</style>
-<script>try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}</script>
 </head>
 <body class="min-h-screen">
 
@@ -67,11 +40,6 @@
     <span class="ml-auto shrink-0 inline-flex items-center gap-2 rounded-full border border-line bg-card2 px-3 py-1 text-xs tnum">
       <span class="text-mute">WIB</span><span id="clock" class="font-semibold">--:--:--</span>
     </span>
-    <div class="hbtns shrink-0 flex items-center gap-1.5">
-      <a class="hbtn hbtn-login" href="https://mobile.bonsaibola5.org/" target="_blank" rel="noopener">Login</a>
-      <a class="hbtn hbtn-daftar" href="https://bonsaibola5.org/_View/Register.aspx" target="_blank" rel="noopener">Daftar</a>
-      <button id="themeBtn" type="button" class="hbtn hbtn-theme" aria-label="Ganti mode terang / gelap" title="Mode terang / gelap">🌙</button>
-    </div>
   </div>
 </header>
 
@@ -91,10 +59,6 @@
   <img id="hero" src="https://i.imgur.com/BZSBShA.png" alt="Bonsai Bola"
     class="w-full h-28 sm:h-44 object-cover rounded-xl border border-lline" decoding="async"
     onerror="this.remove()">
-</div>
-
-<div class="max-w-5xl mx-auto px-3 pt-3">
-  <a class="bet-btn" href="https://mobile.bonsaibola5.org/" target="_blank" rel="noopener">⚽ BETTING SEKARANG</a>
 </div>
 
 <!-- 3b. MENU LIGA (di bawah banner) -->
@@ -319,7 +283,7 @@ function renderList() {
     b.classList.add('hidden');
     $('#list').innerHTML = `<div class="rounded-xl border border-lline bg-lcard p-8 text-center text-sm">
       <p class="text-lmute">${esc(state.error)}</p>
-      <p class="mt-1 text-xs text-lmute">Jika dijalankan lokal, gunakan `vercel dev`.</p>
+      <p class="mt-1 text-xs text-lmute">Jika dijalankan lokal, gunakan <code>vercel dev</code>, bukan membuka file langsung.</p>
       <button data-retry class="mt-4 rounded-lg bg-lime px-4 py-2 font-semibold text-card">Coba lagi</button></div>`;
     return;
   }
@@ -430,10 +394,6 @@ document.addEventListener('visibilitychange', () => {             // tab dibuka 
 });
 
 refresh();
-</script>
-<script>
-(function(){var b=document.getElementById('themeBtn');function s(){var d=document.documentElement.classList.contains('dark');b.textContent=d?'☀️':'🌙';}
-s();b.addEventListener('click',function(){var d=document.documentElement.classList.toggle('dark');try{localStorage.setItem('theme',d?'dark':'light')}catch(e){}s();});})();
 </script>
 </body>
 </html>
