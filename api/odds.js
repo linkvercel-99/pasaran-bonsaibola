@@ -191,6 +191,62 @@ function mockPayload(reason) {
   return { source: 'mock', notice: reason + ' Menampilkan data contoh.', updatedAt: new Date().toISOString(), events };
 }
 
+
+/* ---------- BERITA (liga top dunia, Bahasa Indonesia) ----------
+   Panggil: GET /api/odds?type=news
+   Output: { source, updatedAt, articles:[{ id, league, headline, description, published, links, images:[{url,width,height}] }] } */
+const NEWS_LEAGUES = [
+  ['eng.1', 'Premier League'], ['esp.1', 'La Liga'], ['ita.1', 'Serie A'],
+  ['ger.1', 'Bundesliga'], ['fra.1', 'Ligue 1'], ['uefa.champions', 'Champions League']
+];
+const NEWS_PER_LEAGUE = 8;
+const NEWS_MAX = 30;
+
+// Terjemahan EN -> ID (Google Translate publik, tanpa API key). Gagal -> teks asli.
+async function toID(text) {
+  if (!text) return '';
+  try {
+    const u = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=id&dt=t&q=' + encodeURIComponent(text);
+    const r = await fetch(u);
+    if (!r.ok) return text;
+    const j = await r.json();
+    return (j[0] || []).map(x => x[0]).join('') || text;
+  } catch { return text; }
+}
+
+async function fetchNews() {
+  const results = await allSettledLimited(NEWS_LEAGUES, CONCURRENCY, async ([code, name]) => {
+    const r = await fetch(`${ESPN}/${code}/news?limit=${NEWS_PER_LEAGUE}`, { headers: { Accept: 'application/json' } });
+    if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
+    return ((await r.json()).articles || []).map(a => ({ a, name }));
+  });
+  const seen = new Set(), list = [];
+  results.forEach(r => r.status === 'fulfilled' && r.value.forEach(({ a, name }) => {
+    const id = String(a.id || a.headline);
+    if (seen.has(id) || !a.headline) return;
+    seen.add(id);
+    list.push({
+      id, league: name,
+      headline: a.headline, description: a.description || '',
+      published: a.published || a.lastModified || '',
+      links: {
+        web: ((a.links || {}).web || {}).href || '',
+        mobile: ((a.links || {}).mobile || {}).href || '',
+        app: (((a.links || {}).app || {}).sportscenter || {}).href || ''
+      },
+      images: (a.images || []).filter(i => i && i.url).map(i => ({ url: i.url, width: i.width || null, height: i.height || null, caption: i.caption || '' }))
+    });
+  }));
+  if (!list.length) throw results.find(r => r.status === 'rejected')?.reason || new Error('Berita kosong');
+  list.sort((x, y) => Date.parse(y.published) - Date.parse(x.published));
+  const top = list.slice(0, NEWS_MAX);
+  await allSettledLimited(top, CONCURRENCY, async n => {
+    [n.headline, n.description] = await Promise.all([toID(n.headline), toID(n.description)]);
+    for (const img of n.images) if (img.caption) img.caption = await toID(img.caption);
+  });
+  return top;
+}
+
 /* ---------- Handler ---------- */
 function reply(res, payload, seconds) {
   res.setHeader('Cache-Control', `public, s-maxage=${seconds}, stale-while-revalidate=${Math.min(seconds, 600)}`);
@@ -201,6 +257,15 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+  if (req.query && req.query.type === 'news') {
+    try {
+      const articles = await fetchNews();
+      return reply(res, { source: 'espn', updatedAt: new Date().toISOString(), articles }, 900);
+    } catch (e) {
+      console.error('espn news error:', e.message);
+      return reply(res, { source: 'error', notice: errorText(e), updatedAt: new Date().toISOString(), articles: [] }, 60);
+    }
   }
   try {
     const { events, failed } = await fetchLive();
