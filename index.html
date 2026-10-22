@@ -14,6 +14,8 @@
   body { background:#e6f5da; color:#1f2d1a; font-family:'Plus Jakarta Sans',Inter,system-ui,sans-serif; }
     .tnum { font-variant-numeric: tabular-nums; }
   .no-sb { scrollbar-width:none; } .no-sb::-webkit-scrollbar { display:none; }
+  html { scroll-behavior:smooth; }
+  #pasaran,#berita { scroll-margin-top:4.25rem; }
   .match { cursor:pointer; transition: background .15s; }
   .match:hover { background:#e1f3d4; }
   :focus-visible { outline:2px solid #4ade80; outline-offset:2px; }
@@ -52,6 +54,30 @@
   html.dark .text-nblue{color:#60a5fa}
   html.dark .text-oblue{color:#93c5fd}
 </style>
+<style>
+  /* Berita */
+  .nw-tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px;margin-bottom:10px}
+  .nw-tabs::-webkit-scrollbar{display:none}
+  .nw-tab{flex-shrink:0;border-radius:9999px;border:1px solid #b9c9ad;background:#fff;color:#1f2d1a;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer}
+  .nw-tab.on{background:#4ade80;border-color:#4ade80;color:#0a1408}
+  .nw-grid{display:grid;gap:12px;grid-template-columns:1fr}
+  @media(min-width:640px){.nw-grid{grid-template-columns:1fr 1fr}}
+  @media(min-width:900px){.nw-grid{grid-template-columns:1fr 1fr 1fr}}
+  .nw-card{display:flex;flex-direction:column;overflow:hidden;border-radius:12px;border:1px solid #b9c9ad;background:#fff;text-decoration:none;color:inherit;transition:transform .15s,box-shadow .15s}
+  .nw-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.08)}
+  .nw-img{width:100%;aspect-ratio:16/9;object-fit:cover;background:#d3ebc2}
+  .nw-body{padding:10px 12px 12px;display:flex;flex-direction:column;gap:6px;flex:1}
+  .nw-meta{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#5d7052}
+  .nw-lg{font-weight:800;color:#16a34a}
+  .nw-h{font-size:14px;font-weight:800;line-height:1.35}
+  .nw-d{font-size:12.5px;line-height:1.5;color:#4a5d40;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .nw-more{margin-top:auto;font-size:12px;font-weight:800;color:#16a34a}
+  .nw-empty{border-radius:12px;border:1px solid #b9c9ad;background:#fff;padding:24px;text-align:center;font-size:13px;color:#5d7052}
+  html.dark .nw-card,html.dark .nw-empty,html.dark .nw-tab{background:#13240f;border-color:#2c4a25;color:#e6f2df}
+  html.dark .nw-tab.on{background:#4ade80;border-color:#4ade80;color:#0a1408}
+  html.dark .nw-d,html.dark .nw-meta,html.dark .nw-empty{color:#9fb393}
+  html.dark .nw-img{background:#1c3517}
+</style>
 <script>try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}</script>
 </head>
 <body class="min-h-screen">
@@ -74,6 +100,14 @@
     </div>
   </div>
 </header>
+
+<!-- 1b. MENU NAVIGASI: lompat cepat ke Pasaran / Berita -->
+<nav class="bg-bg border-b border-line" aria-label="Menu utama">
+  <div class="max-w-5xl mx-auto px-3 py-2 flex gap-1.5 overflow-x-auto no-sb">
+    <a href="#pasaran" class="shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 text-sm font-semibold text-white transition hover:border-lime/60" aria-label="Ke pasaran bola"> Pasaran Bola</a>
+    <a href="#berita" class="shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 text-sm font-semibold text-white transition hover:border-lime/60" aria-label="Ke berita liga top dunia"> Berita Liga Top</a>
+  </div>
+</nav>
 
 <!-- 2. KOLOM PENCARIAN -->
 <div class="bg-bg border-b border-line">
@@ -105,7 +139,7 @@
 </nav>
 
 
-<main class="max-w-5xl mx-auto px-3 py-4">
+<main id="pasaran" class="max-w-5xl mx-auto px-3 py-4">
   <div class="mb-2 flex items-center justify-between gap-2">
     <h2 id="cur" class="min-w-0 truncate text-base font-extrabold text-ink">Hari Ini</h2>
   </div>
@@ -117,6 +151,17 @@
   <div id="list" class="space-y-4" aria-live="polite"></div>
   <p class="mt-8 text-center text-xs text-lmute">Odds hanya sebagai informasi. Data diperbarui otomatis setiap 10 menit. Ketuk pertandingan untuk menyalin pasaran.</p>
 </main>
+
+<!-- 4. BERITA LIGA TOP DUNIA -->
+<section id="berita" class="max-w-5xl mx-auto px-3 pb-6" aria-labelledby="nwTitle">
+  <div class="mb-2 flex items-center justify-between gap-2">
+    <h2 id="nwTitle" class="text-base font-extrabold text-ink">📰 Berita Liga Top Dunia</h2>
+    <span id="nwUpd" class="text-xs text-lmute"></span>
+  </div>
+  <div id="nwTabs" class="nw-tabs" role="tablist" aria-label="Filter berita liga"></div>
+  <div id="nwList" class="nw-grid" aria-live="polite"><div class="nw-empty">Memuat berita…</div></div>
+  <p class="mt-2 text-center text-xs text-lmute">Sumber berita: ESPN · diterjemahkan otomatis ke Bahasa Indonesia.</p>
+</section>
 
 <div id="toast" class="fixed left-1/2 bottom-6 z-30 -translate-x-1/2 translate-y-4 opacity-0 pointer-events-none transition rounded-full bg-lime px-4 py-2 text-sm font-semibold text-card shadow-lg max-w-[90vw] truncate" role="status"></div>
 
@@ -467,6 +512,54 @@ document.addEventListener('visibilitychange', () => {             // tab dibuka 
 });
 
 refresh();
+
+/* ================= BERITA ================= */
+const news = { list: [], league: 'Semua', err: '' };
+const NEWS_TABS = ['Semua', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Champions League'];
+function timeAgo(iso) {
+  const t = Date.parse(iso); if (!t) return '';
+  const m = Math.round((Date.now() - t) / 6e4);
+  if (m < 1) return 'Baru saja';
+  if (m < 60) return m + ' menit lalu';
+  if (m < 1440) return Math.floor(m / 60) + ' jam lalu';
+  return new Date(t).toLocaleDateString('id-ID', { timeZone: TZ, day: 'numeric', month: 'short', year: 'numeric' }) + ', ' + fmtTime(t) + ' WIB';
+}
+// Pilih gambar paling pas (lebar terdekat ke 640px) dari array images
+function pickImg(imgs) {
+  if (!imgs || !imgs.length) return null;
+  return imgs.slice().sort((a, b) => Math.abs((a.width || 640) - 640) - Math.abs((b.width || 640) - 640))[0];
+}
+function renderNews() {
+  $('#nwTabs').innerHTML = NEWS_TABS.map(l => `<button type="button" role="tab" aria-selected="${news.league === l}" data-nw="${esc(l)}" class="nw-tab ${news.league === l ? 'on' : ''}">${esc(l)}</button>`).join('');
+  if (news.err && !news.list.length) { $('#nwList').innerHTML = `<div class="nw-empty">${esc(news.err)}</div>`; return; }
+  const items = news.list.filter(n => news.league === 'Semua' || n.league === news.league);
+  if (!items.length) { $('#nwList').innerHTML = `<div class="nw-empty">Belum ada berita untuk liga ini.</div>`; return; }
+  $('#nwList').innerHTML = items.map(n => {
+    const img = pickImg(n.images), href = (n.links && (n.links.web || n.links.mobile)) || '#';
+    return `<a class="nw-card" href="${esc(href)}" target="_blank" rel="noopener">
+      ${img ? `<img class="nw-img" src="${esc(img.url)}" ${img.width ? `width="${img.width}" height="${img.height || ''}"` : ''} alt="${esc(img.caption || n.headline)}" loading="lazy" decoding="async" onerror="this.remove()">` : ''}
+      <div class="nw-body">
+        <div class="nw-meta"><span class="nw-lg">${esc(n.league)}</span><time datetime="${esc(n.published)}">${esc(timeAgo(n.published))}</time></div>
+        <h3 class="nw-h">${esc(n.headline)}</h3>
+        ${n.description ? `<p class="nw-d">${esc(n.description)}</p>` : ''}
+        <span class="nw-more">Baca selengkapnya di ESPN →</span>
+      </div></a>`;
+  }).join('');
+}
+async function loadNews() {
+  try {
+    const r = await fetch('/api/odds?type=news', { headers: { Accept: 'application/json' } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const p = await r.json();
+    news.list = Array.isArray(p.articles) ? p.articles : [];
+    news.err = news.list.length ? '' : (p.notice || 'Berita belum tersedia.');
+    $('#nwUpd').textContent = 'Update ' + fmtTime(Date.now()) + ' WIB';
+  } catch (e) { news.err = 'Gagal memuat berita (' + e.message + ').'; }
+  renderNews();
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-nw]'); if (b) { news.league = b.dataset.nw; renderNews(); } });
+renderNews(); loadNews();
+setInterval(loadNews, 15 * 60 * 1000);
 </script>
 <script>
 (function(){var b=document.getElementById('themeBtn');function s(){var d=document.documentElement.classList.contains('dark');b.textContent=d?'☀️':'🌙';}
