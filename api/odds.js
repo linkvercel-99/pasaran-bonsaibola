@@ -247,6 +247,23 @@ async function fetchNews() {
   return top;
 }
 
+/* ---------- ARTIKEL LENGKAP (isi berita per artikel, untuk popup) ----------
+   Panggil: GET /api/odds?type=article&id=<id berita>&league=<nama liga>
+   Output: { source, updatedAt, article:{ id, headline, story, link } } */
+async function fetchArticle(id) {
+  // Endpoint konten ESPN: mengembalikan isi artikel lengkap (story)
+  const r = await fetch(`https://now.core.api.espn.com/v1/sports/news/${encodeURIComponent(id)}`, { headers: { Accept: 'application/json' } });
+  if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
+  const j = await r.json();
+  const a = ((j.headlines || [])[0]) || {};
+  // Isi berita (story) berupa HTML -> buang tag, rapikan spasi, lalu terjemahkan
+  let story = String(a.story || a.description || '')
+    .replace(/<br\s*\/?\s*>/gi, '\n').replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
+    .replace(/<[^>]*>/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n\s+/g, '\n').trim();
+  const [headline, storyID] = await Promise.all([a.headline ? toID(a.headline) : '', story ? toID(story) : '']);
+  return { id: String(id), headline, story: storyID, link: ((a.links || {}).web || {}).href || '' };
+}
+
 /* ---------- Handler ---------- */
 function reply(res, payload, seconds) {
   res.setHeader('Cache-Control', `public, s-maxage=${seconds}, stale-while-revalidate=${Math.min(seconds, 600)}`);
@@ -257,6 +274,17 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+  if (req.query && req.query.type === 'article') {
+    const id = String(req.query.id || '').trim();
+    if (!/^\d{4,12}$/.test(id)) return res.status(400).json({ error: 'id berita tidak valid' });
+    try {
+      const article = await fetchArticle(id);
+      return reply(res, { source: 'espn', updatedAt: new Date().toISOString(), article }, 3600);
+    } catch (e) {
+      console.error('espn article error:', e.message);
+      return reply(res, { source: 'error', notice: errorText(e), updatedAt: new Date().toISOString(), article: null }, 60);
+    }
   }
   if (req.query && req.query.type === 'news') {
     try {
