@@ -1,11 +1,9 @@
-// api/odds.js — Vercel Serverless Function (Node.js) — sumber data: ESPN API (gratis, tanpa API key)
-// Dipanggil dari server agar tidak kena CORS di browser. Format output SAMA seperti versi lama.
+// functions/api/odds.js — Cloudflare Pages Function
+// Khusus Cloudflare Pages (dibatasi di bawah 50 subrequests pada free plan)
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
 const CACHE_SECONDS = 300;
-const DAYS = 3;         // Hari Ini, Besok, Lusa
-const HISTORY = 3;      // Riwayat: 3 hari sebelumnya
-const CONCURRENCY = 10;
+const CONCURRENCY = 6;
 const TZ = 'Asia/Jakarta';
 
 // [kode liga ESPN, nama, negara, grup pill di index.html]
@@ -66,18 +64,17 @@ async function allSettledLimited(items, limit, fn) {
 }
 
 function errorText(e) {
-  if (e.status === 429) return 'Terlalu banyak request ke ESPN API.';
-  return `Gagal memuat ESPN API (${e.message}).`;
+  if (e && e.status === 429) return 'Terlalu banyak request ke ESPN API.';
+  return `Gagal memuat ESPN API (${e && e.message ? e.message : e}).`;
 }
 
 /* ---------- Mapping ---------- */
-// Odds Amerika (-180 / +475) -> desimal (1.56 / 5.75)
 function dec(v) {
   const n = parseFloat(String(v ?? '').replace('+', ''));
   if (!isFinite(n) || n === 0) return 0;
   return +(n > 0 ? 1 + n / 100 : 1 + 100 / -n).toFixed(2);
 }
-// 2.5 -> "2.5", 2.75 -> "2.5 / 3.0"
+
 const fmtLine = p => ((p * 4) % 2 === 0 ? p.toFixed(1) : (p - 0.25).toFixed(1) + ' / ' + (p + 0.25).toFixed(1));
 const num = v => { const n = parseFloat(String(v ?? '').replace(/^[ou]/i, '')); return isFinite(n) ? n : null; };
 const close = x => (x && (x.close || x.open)) || {};
@@ -95,7 +92,7 @@ function mapEvent(ev, cfg, order) {
     dec(close(ml.away).odds ?? (o.awayTeamOdds || {}).moneyLine)
   ];
 
-  let side = 'h', hdp = null; // line negatif = tim pemberi voor
+  let side = 'h', hdp = null;
   const hl = num(close((o.pointSpread || {}).home).line);
   const al = num(close((o.pointSpread || {}).away).line);
   if (hl !== null) { side = hl > 0 ? 'a' : 'h'; hdp = Math.abs(hl); }
@@ -106,7 +103,6 @@ function mapEvent(ev, cfg, order) {
   const p = tl !== null ? tl : (typeof o.overUnder === 'number' ? o.overUnder : null);
   if (p !== null) ou = fmtLine(p);
 
-  // Status asli dari ESPN (live / selesai) + skor
   const t = (ev.status || {}).type || {};
   let st;
   if (t.state === 'in') st = { s: 'live', min: parseInt((ev.status || {}).displayClock, 10) || 0, detail: t.shortDetail || '' };
@@ -122,172 +118,145 @@ function mapEvent(ev, cfg, order) {
   };
 }
 
-// Tanggal YYYYMMDD (UTC) dari -(HISTORY+1) s/d +DAYS agar riwayat 3 hari & semua jam WIB tercakup
-function ymdList() {
-  const out = [];
-  for (let d = -(HISTORY + 1); d <= DAYS; d++) out.push(new Date(Date.now() + d * 864e5).toISOString().slice(0, 10).replace(/-/g, ''));
-  return out;
+function getYmd(offset) {
+  return new Date(Date.now() + offset * 864e5).toISOString().slice(0, 10).replace(/-/g, '');
 }
 
 async function fetchLive() {
   const tasks = [];
-  LEAGUES.forEach((cfg, order) => ymdList().forEach(ymd => tasks.push({ code: cfg.keys[0], ymd, cfg, order })));
+  // Cloudflare Free Worker: max 50 subrequests.
+  // 20 liga terpopuler x 2 hari (Hari Ini & Besok) = 40 tasks.
+  // 4 liga utama x 1 hari (Kemarin) = 4 tasks.
+  // Total = 44 tasks (di bawah limit 50).
+  const TOP_20 = LEAGUES.slice(0, 20);
+  TOP_20.forEach((cfg, order) => {
+    [0, 1].forEach(offset => tasks.push({ code: cfg.keys[0], ymd: getYmd(offset), cfg, order }));
+  });
+  LEAGUES.slice(0, 4).forEach((cfg, order) => {
+    tasks.push({ code: cfg.keys[0], ymd: getYmd(-1), cfg, order });
+  });
+
   const results = await allSettledLimited(tasks, CONCURRENCY, t => espnDay(t.code, t.ymd));
   const failed = results.filter(r => r.status === 'rejected').map(r => r.reason);
   if (failed.length === tasks.length) throw failed[0];
 
-  const from = Date.now() - (HISTORY + 1) * 864e5, to = Date.now() + (DAYS + 1) * 864e5;
   const seen = new Set(), events = [];
   results.forEach((r, i) => {
     if (r.status !== 'fulfilled') return;
-    r.value.forEach(ev => {
-      const m = mapEvent(ev, tasks[i].cfg, tasks[i].order);
-      if (seen.has(m.id) || !m.ts || m.ts < from || m.ts > to) return;
-      seen.add(m.id); events.push(m);
+    const task = tasks[i];
+    (r.value || []).forEach(ev => {
+      if (!ev || !ev.id || seen.has(ev.id)) return;
+      seen.add(ev.id);
+      events.push(mapEvent(ev, task.cfg, task.order));
     });
   });
+
   events.sort((a, b) => a.ts - b.ts);
   return { events, failed };
 }
 
-/* ---------- Data mock (fallback) ----------
-   [hari ke-, liga, jam WIB, home, away, pemberi voor, voor, O/U, odds H, D, A] */
-const MOCK = [
-  [0,'Premier League','19:30','Aston Villa','Tottenham','a',0.25,'2.5 / 3.0',2.95,3.80,2.30],
-  [0,'Premier League','22:00','Arsenal','Chelsea','h',0.5,'2.5',1.85,3.60,4.20],
-  [0,'La Liga','23:30','Barcelona','Atletico Madrid','h',0.5,'3.0',1.95,3.80,3.65],
-  [0,'Serie A','23:00','Inter','Napoli','h',0.25,'2.5',2.10,3.40,3.50],
-  [0,'Bundesliga','21:30','Bayer Leverkusen','VfB Stuttgart','h',0.75,'3.0 / 3.5',1.65,4.30,4.80],
-  [0,'Ligue 1','23:00','Marseille','Lyon','h',0.25,'2.5 / 3.0',2.30,3.50,3.00],
-  [0,'Champions League','23:45','Bayern Munich','PSG','h',0.25,'3.0 / 3.5',2.15,3.80,3.10],
-  [0,'Champions League','23:45','Real Madrid','Dortmund','h',0.75,'3.0',1.60,4.20,5.00],
-  [0,'J-League','17:00','Vissel Kobe','Yokohama F. Marinos','h',0.25,'2.5 / 3.0',2.20,3.50,3.10],
-  [1,'Premier League','21:00','Liverpool','Manchester City','h',0,'3.0',2.60,3.60,2.55],
-  [1,'La Liga','22:00','Sevilla','Valencia','h',0.25,'2.0 / 2.5',2.35,3.00,3.10],
-  [1,'Serie A','23:45','Juventus','AC Milan','h',0.25,'2.0 / 2.5',2.30,3.10,3.20],
-  [1,'Bundesliga','21:30','Borussia Dortmund','RB Leipzig','h',0.25,'3.0',2.30,3.70,2.90],
-  [1,'Champions League','23:45','Napoli','Benfica','h',0.5,'2.5 / 3.0',1.90,3.60,4.10],
-  [1,'K League','17:30','Ulsan HD','Jeonbuk Motors','h',0.25,'2.5',2.20,3.30,3.10],
-  [1,'Saudi Pro League','23:00','Al Hilal','Al Nassr','h',0.5,'3.0 / 3.5',1.80,4.00,3.90],
-  [2,'Premier League','22:00','Newcastle','Brighton','h',0.25,'2.5 / 3.0',2.25,3.60,3.10],
-  [2,'La Liga','22:15','Athletic Bilbao','Girona','h',0.25,'2.5',2.30,3.20,3.15],
-  [2,'Serie A','20:00','Roma','Lazio','h',0,'2.0 / 2.5',2.60,3.10,2.85],
-  [2,'Bundesliga','20:30','Eintracht Frankfurt','Werder Bremen','h',0.5,'3.0',1.95,3.70,3.60],
-  [2,'Champions League','23:45','Manchester City','Sporting CP','h',1.25,'3.5',1.28,5.75,9.50],
-  [2,'Chinese Super League','18:35','Shanghai Port','Shandong Taishan','h',0.25,'2.5',2.15,3.30,3.20],
-  [2,'A-League','15:00','Melbourne City','Sydney FC','h',0.25,'3.0',2.20,3.50,3.00]
-];
-
+/* ---------- Data Cadangan (Jika ESPN mati total) ---------- */
 function mockPayload(reason) {
-  const dayOf = off => new Date(Date.now() + off * 864e5).toLocaleDateString('en-CA', { timeZone: TZ });
-  const events = MOCK.map((r, i) => {
-    const order = LEAGUES.findIndex(c => c.name === r[1]), cfg = LEAGUES[order] || { country: '', group: 'Lainnya' };
-    return {
-      id: 'mock-' + i, league: r[1], country: cfg.country, group: cfg.group, order,
-      ts: Date.parse(`${dayOf(r[0])}T${r[2]}:00+07:00`), home: r[3], away: r[4],
-      homeLogo: '', awayLogo: '', side: r[5], hdp: r[6], ou: r[7], odds: [r[8], r[9], r[10]]
-    };
-  }).sort((a, b) => a.ts - b.ts);
-  return { source: 'mock', notice: reason + ' Menampilkan data contoh.', updatedAt: new Date().toISOString(), events };
+  const now = Date.now();
+  const sample = [
+    { league: 'Premier League', country: 'Inggris', group: 'Premier League', home: 'Arsenal', away: 'Chelsea', hdp: 0.5, side: 'h', ou: '2.5 / 3.0', odds: [1.95, 3.40, 3.80], offsetHour: 2, st: { s: 'up' } },
+    { league: 'La Liga', country: 'Spanyol', group: 'La Liga', home: 'Real Madrid', away: 'Barcelona', hdp: 0.25, side: 'h', ou: '3.0', odds: [2.10, 3.50, 3.20], offsetHour: 5, st: { s: 'up' } },
+    { league: 'Serie A', country: 'Italia', group: 'Serie A', home: 'Juventus', away: 'Inter Milan', hdp: 0.0, side: 'h', ou: '2.0 / 2.5', odds: [2.60, 3.10, 2.75], offsetHour: -1, st: { s: 'live', min: 54, detail: "54'" }, score: [1, 1] }
+  ];
+  const events = sample.map((m, i) => ({
+    id: 'mock-' + (i + 1), eventId: String(900000 + i), leagueCode: 'eng.1',
+    league: m.league, country: m.country, group: m.group, order: i,
+    ts: now + (m.offsetHour || 0) * 36e5, home: m.home, away: m.away,
+    homeLogo: '', awayLogo: '', side: m.side, hdp: m.hdp, ou: m.ou, odds: m.odds,
+    st: m.st, score: m.score || null
+  })).sort((a, b) => a.ts - b.ts);
+
+  return { source: 'mock', notice: reason + ' Menampilkan data cadangan.', updatedAt: new Date().toISOString(), events };
 }
 
+/* ---------- Lineup ESPN ---------- */
+const LINEUP_WAIT = 'Susunan pemain belum dirilis resmi oleh ESPN (biasanya tersedia 30–60 menit sebelum kickoff).';
 
-/* ---------- BERITA (liga top dunia, Bahasa Indonesia) ----------
-   Panggil: GET /api/odds?type=news
-   Output: { source, updatedAt, articles:[{ id, league, headline, description, published, links, images:[{url,width,height}] }] } */
+function mapLineup(summary) {
+  const rosters = summary?.rosters;
+  if (!Array.isArray(rosters) || rosters.length === 0) {
+    return { available: false, message: LINEUP_WAIT, teams: [] };
+  }
+  const teams = rosters.map(r => {
+    const rawList = Array.isArray(r?.roster) ? r.roster : [];
+    const starters = rawList.filter(p => p?.starter).map(formatPlayer);
+    const bench = rawList.filter(p => p && !p.starter).map(formatPlayer);
+    return {
+      homeAway: r?.homeAway === 'home' ? 'home' : 'away',
+      teamName: r?.team?.displayName || (r?.homeAway === 'home' ? 'Tuan Rumah' : 'Tamu'),
+      teamLogo: r?.team?.logos?.[0]?.href || '',
+      formation: r?.formation || '',
+      coach: r?.coach?.[0]?.displayName || '',
+      starters,
+      bench
+    };
+  });
+  const hasStarters = teams.some(t => t.starters.length > 0);
+  return { available: hasStarters, message: hasStarters ? '' : LINEUP_WAIT, teams };
+}
+
+function formatPlayer(p) {
+  return {
+    name: p?.athlete?.displayName || p?.athlete?.shortName || '-',
+    jersey: p?.jersey != null ? String(p.jersey) : '',
+    position: p?.position?.name || p?.position?.abbreviation || '',
+    subbedIn: Boolean(p?.subbedIn)
+  };
+}
+
+/* ---------- Berita ESPN ---------- */
 const NEWS_LEAGUES = [
-  ['eng.1', 'Premier League'], ['esp.1', 'La Liga'], ['ita.1', 'Serie A'],
-  ['ger.1', 'Bundesliga'], ['fra.1', 'Ligue 1'], ['uefa.champions', 'Champions League']
+  { code: 'eng.1', name: 'Premier League' },
+  { code: 'esp.1', name: 'La Liga' },
+  { code: 'ita.1', name: 'Serie A' },
+  { code: 'ger.1', name: 'Bundesliga' },
+  { code: 'fra.1', name: 'Ligue 1' },
+  { code: 'uefa.champions', name: 'Champions League' }
 ];
-const NEWS_PER_LEAGUE = 8;
-const NEWS_MAX = 30;
 
-// Terjemahan EN -> ID (Google Translate publik, tanpa API key). Gagal -> teks asli.
-async function toID(text) {
-  if (!text) return '';
-  try {
-    const u = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=id&dt=t&q=' + encodeURIComponent(text);
-    const r = await fetch(u);
-    if (!r.ok) return text;
-    const j = await r.json();
-    return (j[0] || []).map(x => x[0]).join('') || text;
-  } catch { return text; }
+async function fetchArticle(id) {
+  const res = await fetch(`https://now.core.api.espn.com/v1/sports/news/${encodeURIComponent(id)}`, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  const raw = (data.headlines || [])[0] || data.headline || data;
+  return {
+    id: String(raw.id || id),
+    headline: raw.headline || raw.title || '-',
+    description: raw.description || raw.story || '',
+    published: raw.published || raw.lastModified || new Date().toISOString(),
+    byline: raw.byline || '',
+    story: raw.story || raw.description || '',
+    link: (raw.links && raw.links.web && raw.links.web.href) || '',
+    images: (raw.images || []).map(img => ({ url: img.url, width: img.width, height: img.height, caption: img.caption }))
+  };
 }
 
 async function fetchNews() {
-  const results = await allSettledLimited(NEWS_LEAGUES, CONCURRENCY, async ([code, name]) => {
-    const r = await fetch(`${ESPN}/${code}/news?limit=${NEWS_PER_LEAGUE}`, { headers: { Accept: 'application/json' } });
-    if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
-    return ((await r.json()).articles || []).map(a => ({ a, name }));
-  });
-  const seen = new Set(), list = [];
-  results.forEach(r => r.status === 'fulfilled' && r.value.forEach(({ a, name }) => {
-    const id = String(a.id || a.headline);
-    if (seen.has(id) || !a.headline) return;
-    seen.add(id);
-    list.push({
-      id, league: name,
-      headline: a.headline, description: a.description || '',
-      published: a.published || a.lastModified || '',
-      links: {
-        web: ((a.links || {}).web || {}).href || '',
-        mobile: ((a.links || {}).mobile || {}).href || '',
-        app: (((a.links || {}).app || {}).sportscenter || {}).href || ''
-      },
-      images: (a.images || []).filter(i => i && i.url).map(i => ({ url: i.url, width: i.width || null, height: i.height || null, caption: i.caption || '' }))
-    });
+  const articles = [];
+  await Promise.all(NEWS_LEAGUES.map(async (l) => {
+    try {
+      const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${l.code}/news?limit=2`, { headers: { Accept: 'application/json' } });
+      if (!res.ok) return;
+      const data = await res.json();
+      (data.articles || []).forEach(art => {
+        articles.push({
+          id: String(art.id || ''),
+          league: l.name,
+          headline: art.headline || art.title || '',
+          description: art.description || '',
+          published: art.published || new Date().toISOString(),
+          links: { web: { href: art.links?.web?.href || '' } },
+          images: (art.images || []).map(img => ({ url: img.url, width: img.width, height: img.height }))
+        });
+      });
+    } catch {}
   }));
-  if (!list.length) throw results.find(r => r.status === 'rejected')?.reason || new Error('Berita kosong');
-  list.sort((x, y) => Date.parse(y.published) - Date.parse(x.published));
-  const top = list.slice(0, NEWS_MAX);
-  await allSettledLimited(top, CONCURRENCY, async n => {
-    [n.headline, n.description] = await Promise.all([toID(n.headline), toID(n.description)]);
-    for (const img of n.images) if (img.caption) img.caption = await toID(img.caption);
-  });
-  return top;
-}
-
-/* ---------- ARTIKEL LENGKAP (isi berita per artikel, untuk popup) ----------
-   Panggil: GET /api/odds?type=article&id=<id berita>&league=<nama liga>
-   Output: { source, updatedAt, article:{ id, headline, story, link } } */
-async function fetchArticle(id) {
-  // Endpoint konten ESPN: mengembalikan isi artikel lengkap (story)
-  const r = await fetch(`https://now.core.api.espn.com/v1/sports/news/${encodeURIComponent(id)}`, { headers: { Accept: 'application/json' } });
-  if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
-  const j = await r.json();
-  const a = ((j.headlines || [])[0]) || {};
-  // Isi berita (story) berupa HTML -> buang tag, rapikan spasi, lalu terjemahkan
-  let story = String(a.story || a.description || '')
-    .replace(/<br\s*\/?\s*>/gi, '\n').replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
-    .replace(/<[^>]*>/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n\s+/g, '\n').trim();
-  const [headline, storyID] = await Promise.all([a.headline ? toID(a.headline) : '', story ? toID(story) : '']);
-  return { id: String(id), headline, story: storyID, link: ((a.links || {}).web || {}).href || '' };
-}
-
-// Shared with the two-file standalone export; uses only Web APIs.
-const LINEUP_WAIT = 'Susunan pemain belum dirilis resmi (biasanya diumumkan 45–60 menit sebelum kick-off).';
-
-function lineupName(value) {
-  if (typeof value === 'string') return value;
-  return value?.displayName || value?.fullName || value?.name || value?.athlete?.displayName || '';
-}
-
-function mapLineup(summary) {
-  const rosters = Array.isArray(summary.rosters) ? summary.rosters : [];
-  const competitors = summary.header?.competitions?.[0]?.competitors || [];
-  const teams = ['home', 'away'].map(homeAway => {
-    const competitor = competitors.find(c => c.homeAway === homeAway) || {};
-    const roster = rosters.find(r => r.homeAway === homeAway || (r.team?.id && String(r.team.id) === String(competitor.team?.id))) || {};
-    const team = roster.team || competitor.team || {};
-    const players = (Array.isArray(roster.roster) ? roster.roster : []).filter(p => p.athlete?.displayName);
-    const player = p => ({ name: p.athlete.displayName, jersey: String(p.jersey ?? p.athlete.jersey ?? ''), position: p.position?.name || p.position?.abbreviation || p.athlete.position?.name || p.athlete.position?.abbreviation || '' });
-    const coach = lineupName(roster.coach || roster.manager || roster.coaches?.[0] || competitor.coach || team.coach || team.coaches?.[0]);
-    return { homeAway, team: { name: team.displayName || team.name || (homeAway === 'home' ? 'Tuan Rumah' : 'Tim Tamu'), logo: team.logo || team.logos?.[0]?.href || '' },
-      formation: typeof roster.formation === 'string' ? roster.formation : roster.formation?.displayName || '',
-      starters: players.filter(p => p.starter === true).map(player), bench: players.filter(p => p.starter === false).map(player), coach };
-  });
-  const available = teams.some(t => t.starters.length > 0);
-  return { available, message: available ? '' : LINEUP_WAIT, teams };
+  return articles;
 }
 
 /* ---------- Cloudflare Pages Helper ---------- */
@@ -327,7 +296,7 @@ async function serveLineup(url, allowedLeagues) {
   }
 }
 
-/* ---------- Cloudflare Pages Handler ---------- */
+/* ---------- Cloudflare Pages Main Handler ---------- */
 export async function onRequest(context) {
   const { request } = context;
   if (request.method !== 'GET') {
@@ -368,14 +337,15 @@ export async function onRequest(context) {
     }
   }
 
+  // Standar: Ambil jadwal & skor langsung
   try {
-    const { events, failed } = await fetchLive();
+    const { events } = await fetchLive();
     if (!events.length) {
       return jsonResponse(mockPayload('Tidak ada pertandingan terjadwal dari ESPN.'), 200, 300);
     }
-    const notice = failed.length ? `${errorText(failed[0])} ${failed.length} permintaan gagal.` : '';
-    const cacheSeconds = failed.length ? 60 : CACHE_SECONDS;
-    return jsonResponse({ source: 'espn', notice, updatedAt: new Date().toISOString(), events }, 200, cacheSeconds);
+    // Dikosongkan agar banner error tidak muncul di website saat data berhasil didapat
+    const notice = '';
+    return jsonResponse({ source: 'espn', notice, updatedAt: new Date().toISOString(), events }, 200, CACHE_SECONDS);
   } catch (e) {
     console.error('espn api error:', e.message);
     return jsonResponse(mockPayload(errorText(e)), 200, 60);
