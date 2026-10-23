@@ -5,10 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#142811">
 <title>Bonsai Bola – Pasaran Bola Hari Ini</title>
-
   <!-- Favicon website -->
 <link rel="icon" type="image/png" href="/favicon.png">
-  
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -81,6 +79,24 @@
   html.dark .nw-tab.on{background:#4ade80;border-color:#4ade80;color:#0a1408}
   html.dark .nw-d,html.dark .nw-meta,html.dark .nw-empty{color:#9fb393}
   html.dark .nw-img{background:#1c3517}
+  /* Popup berita */
+  .nw-modal{position:fixed;inset:0;z-index:50;display:none;align-items:flex-end;justify-content:center;background:rgba(6,14,5,.72)}
+  .nw-modal.open{display:flex}
+  @media(min-width:640px){.nw-modal{align-items:center;padding:24px}}
+  .nw-box{position:relative;background:#fff;color:#1f2d1a;width:100%;max-width:640px;max-height:88vh;overflow-y:auto;border-radius:16px 16px 0 0;display:flex;flex-direction:column}
+  @media(min-width:640px){.nw-box{border-radius:16px}}
+  .nw-boximg{width:100%;aspect-ratio:16/9;object-fit:cover;background:#d3ebc2}
+  .nw-boxbody{padding:16px 18px 20px;display:flex;flex-direction:column;gap:10px}
+  .nw-boxbody h3{font-size:18px;font-weight:800;line-height:1.35}
+  .nw-story{font-size:14px;line-height:1.7;color:#3a4a33;white-space:pre-line}
+  .nw-close{position:absolute;top:10px;right:10px;width:32px;height:32px;border-radius:9999px;border:1px solid #b9c9ad;background:rgba(255,255,255,.92);color:#1f2d1a;font-size:14px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+  .nw-espn{display:inline-block;text-align:center;border-radius:12px;padding:10px 14px;font-weight:800;font-size:13px;background:#4ade80;color:#0a1408;text-decoration:none}
+  .nw-espn:hover{filter:brightness(1.08)}
+  button.nw-card{text-align:left;cursor:pointer;font-family:inherit}
+  html.dark .nw-box{background:#13240f;color:#e6f2df}
+  html.dark .nw-story{color:#c4d6b6}
+  html.dark .nw-boximg{background:#1c3517}
+  html.dark .nw-close{background:rgba(19,36,15,.92);border-color:#2c4a25;color:#e6f2df}
 </style>
 <script>try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}</script>
 </head>
@@ -108,8 +124,8 @@
 <!-- 1b. MENU NAVIGASI: lompat cepat ke Pasaran / Berita -->
 <nav class="bg-bg border-b border-line" aria-label="Menu utama">
   <div class="max-w-5xl mx-auto px-3 py-2 flex gap-1.5 overflow-x-auto no-sb">
-    <a href="#pasaran" class="shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 text-sm font-semibold text-white transition hover:border-lime/60" aria-label="Ke pasaran bola"> Pasaran Bola</a>
-    <a href="#berita" class="shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 text-sm font-semibold text-white transition hover:border-lime/60" aria-label="Ke berita liga top dunia"> Berita Liga Top</a>
+    <a href="#pasaran" class="shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 text-sm font-semibold text-white transition hover:border-lime/60" aria-label="Ke pasaran bola">⚽ Pasaran Bola</a>
+    <a href="#berita" class="shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 text-sm font-semibold text-white transition hover:border-lime/60" aria-label="Ke berita liga top dunia">📰 Berita Liga Top</a>
   </div>
 </nav>
 
@@ -168,6 +184,20 @@
 </section>
 
 <div id="toast" class="fixed left-1/2 bottom-6 z-30 -translate-x-1/2 translate-y-4 opacity-0 pointer-events-none transition rounded-full bg-lime px-4 py-2 text-sm font-semibold text-card shadow-lg max-w-[90vw] truncate" role="status"></div>
+
+<!-- 5. POPUP BERITA (klik kartu berita) -->
+<div id="nwModal" class="nw-modal" role="dialog" aria-modal="true" aria-labelledby="nwMTitle">
+  <div class="nw-box">
+    <button id="nwMClose" type="button" class="nw-close" aria-label="Tutup popup berita">✕</button>
+    <img id="nwMImg" class="nw-boximg" alt="" hidden>
+    <div class="nw-boxbody">
+      <div class="nw-meta"><span id="nwMLeague" class="nw-lg"></span><time id="nwMTime"></time></div>
+      <h3 id="nwMTitle"></h3>
+      <div id="nwMStory" class="nw-story">Memuat isi berita…</div>
+      <a id="nwMLink" class="nw-espn" href="#" target="_blank" rel="noopener">Baca artikel lengkap di ESPN →</a>
+    </div>
+  </div>
+</div>
 
 <script>
 /* ================= KONFIGURASI ================= */
@@ -540,14 +570,14 @@ function renderNews() {
   if (!items.length) { $('#nwList').innerHTML = `<div class="nw-empty">Belum ada berita untuk liga ini.</div>`; return; }
   $('#nwList').innerHTML = items.map(n => {
     const img = pickImg(n.images), href = (n.links && (n.links.web || n.links.mobile)) || '#';
-    return `<a class="nw-card" href="${esc(href)}" target="_blank" rel="noopener">
+    return `<button type="button" class="nw-card" data-nid="${esc(n.id)}" aria-label="Buka berita: ${esc(n.headline)}">
       ${img ? `<img class="nw-img" src="${esc(img.url)}" ${img.width ? `width="${img.width}" height="${img.height || ''}"` : ''} alt="${esc(img.caption || n.headline)}" loading="lazy" decoding="async" onerror="this.remove()">` : ''}
       <div class="nw-body">
         <div class="nw-meta"><span class="nw-lg">${esc(n.league)}</span><time datetime="${esc(n.published)}">${esc(timeAgo(n.published))}</time></div>
         <h3 class="nw-h">${esc(n.headline)}</h3>
         ${n.description ? `<p class="nw-d">${esc(n.description)}</p>` : ''}
-        <span class="nw-more">Baca selengkapnya di ESPN →</span>
-      </div></a>`;
+        <span class="nw-more">Baca berita →</span>
+      </div></button>`;
   }).join('');
 }
 async function loadNews() {
@@ -562,6 +592,50 @@ async function loadNews() {
   renderNews();
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-nw]'); if (b) { news.league = b.dataset.nw; renderNews(); } });
+
+/* ================= POPUP BERITA ================= */
+const nwModal = $('#nwModal');
+function openNews(id) {
+  const n = news.list.find(x => String(x.id) === String(id));
+  if (!n) return;
+  const img = pickImg(n.images), im = $('#nwMImg');
+  if (img) { im.src = img.url; im.alt = img.caption || n.headline; im.hidden = false; }
+  else { im.hidden = true; im.removeAttribute('src'); }
+  $('#nwMLeague').textContent = n.league;
+  const tm = $('#nwMTime');
+  tm.textContent = timeAgo(n.published);
+  tm.setAttribute('datetime', n.published || '');
+  $('#nwMTitle').textContent = n.headline;
+  $('#nwMStory').textContent = 'Memuat isi berita…';
+  const href = (n.links && (n.links.web || n.links.mobile)) || '';
+  const lk = $('#nwMLink');
+  lk.href = href || '#';
+  lk.style.display = href ? '' : 'none';
+  nwModal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  // Ambil isi berita yang lebih panjang dari server (ESPN, diterjemahkan)
+  fetch('/api/odds?type=article&id=' + encodeURIComponent(n.id) + '&league=' + encodeURIComponent(n.league), { headers: { Accept: 'application/json' } })
+    .then(r => r.json())
+    .then(p => {
+      if (!nwModal.classList.contains('open')) return;
+      const a = p && p.article;
+      $('#nwMStory').textContent = (a && a.story) || n.description || 'Isi berita tidak tersedia. Silakan baca artikel lengkap di ESPN.';
+      if (a && a.link) { lk.href = a.link; lk.style.display = ''; }
+    })
+    .catch(() => {
+      if (!nwModal.classList.contains('open')) return;
+      $('#nwMStory').textContent = n.description || 'Gagal memuat isi berita. Silakan baca artikel lengkap di ESPN.';
+    });
+}
+function closeNews() { nwModal.classList.remove('open'); document.body.style.overflow = ''; }
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-nid]');
+  if (c) openNews(c.dataset.nid);
+});
+$('#nwMClose').addEventListener('click', closeNews);
+nwModal.addEventListener('click', e => { if (e.target === nwModal) closeNews(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNews(); });
+
 renderNews(); loadNews();
 setInterval(loadNews, 15 * 60 * 1000);
 </script>
