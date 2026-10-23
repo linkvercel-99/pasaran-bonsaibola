@@ -114,7 +114,7 @@ function mapEvent(ev, cfg, order) {
   else st = { s: 'up' };
 
   return {
-    id: 'espn-' + ev.id, league: cfg.name, country: cfg.country, group: cfg.group, order,
+    id: 'espn-' + ev.id, eventId: String(ev.id), leagueCode: cfg.keys[0], league: cfg.name, country: cfg.country, group: cfg.group, order,
     ts: Date.parse(ev.date), home: (home.team || {}).displayName || '-', away: (away.team || {}).displayName || '-',
     homeLogo: (home.team || {}).logo || '', awayLogo: (away.team || {}).logo || '',
     side, hdp, ou, odds: odds.some(Boolean) ? odds : [0, 0, 0],
@@ -181,7 +181,7 @@ const MOCK = [
 function mockPayload(reason) {
   const dayOf = off => new Date(Date.now() + off * 864e5).toLocaleDateString('en-CA', { timeZone: TZ });
   const events = MOCK.map((r, i) => {
-    const order = LEAGUES.findIndex(c => c.name === r[1]), cfg = LEAGUES[order];
+    const order = LEAGUES.findIndex(c => c.name === r[1]), cfg = LEAGUES[order] || { country: '', group: 'Lainnya' };
     return {
       id: 'mock-' + i, league: r[1], country: cfg.country, group: cfg.group, order,
       ts: Date.parse(`${dayOf(r[0])}T${r[2]}:00+07:00`), home: r[3], away: r[4],
@@ -264,6 +264,58 @@ async function fetchArticle(id) {
   return { id: String(id), headline, story: storyID, link: ((a.links || {}).web || {}).href || '' };
 }
 
+// Shared with the two-file standalone export; uses only Web APIs.
+const LINEUP_WAIT = 'Susunan pemain belum dirilis resmi (biasanya diumumkan 45–60 menit sebelum kick-off).';
+
+function lineupName(value) {
+  if (typeof value === 'string') return value;
+  return value?.displayName || value?.fullName || value?.name || value?.athlete?.displayName || '';
+}
+
+function mapLineup(summary) {
+  const rosters = Array.isArray(summary.rosters) ? summary.rosters : [];
+  const competitors = summary.header?.competitions?.[0]?.competitors || [];
+  const teams = ['home', 'away'].map(homeAway => {
+    const competitor = competitors.find(c => c.homeAway === homeAway) || {};
+    const roster = rosters.find(r => r.homeAway === homeAway || (r.team?.id && String(r.team.id) === String(competitor.team?.id))) || {};
+    const team = roster.team || competitor.team || {};
+    const players = (Array.isArray(roster.roster) ? roster.roster : []).filter(p => p.athlete?.displayName);
+    const player = p => ({ name: p.athlete.displayName, jersey: String(p.jersey ?? p.athlete.jersey ?? ''), position: p.position?.name || p.position?.abbreviation || p.athlete.position?.name || p.athlete.position?.abbreviation || '' });
+    const coach = lineupName(roster.coach || roster.manager || roster.coaches?.[0] || competitor.coach || team.coach || team.coaches?.[0]);
+    return { homeAway, team: { name: team.displayName || team.name || (homeAway === 'home' ? 'Tuan Rumah' : 'Tim Tamu'), logo: team.logo || team.logos?.[0]?.href || '' },
+      formation: typeof roster.formation === 'string' ? roster.formation : roster.formation?.displayName || '',
+      starters: players.filter(p => p.starter === true).map(player), bench: players.filter(p => p.starter === false).map(player), coach };
+  });
+  const available = teams.some(t => t.starters.length > 0);
+  return { available, message: available ? '' : LINEUP_WAIT, teams };
+}
+
+async function serveLineup(req, res, allowedLeagues) {
+  const league = req.query?.league;
+  const id = req.query?.id;
+  if (typeof league !== 'string' || !allowedLeagues.includes(league) || typeof id !== 'string' || !/^\d{1,12}$/.test(id)) {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(400).json({ error: 'Liga atau ID pertandingan tidak valid.' });
+  }
+  try {
+    const response = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${encodeURIComponent(league)}/summary?event=${encodeURIComponent(id)}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+    if (!response.ok) {
+      if (response.status === 404) {
+        res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=60');
+        return res.status(200).json({ source: 'espn', available: false, message: LINEUP_WAIT, teams: [] });
+      }
+      throw new Error('HTTP ' + response.status);
+    }
+    const payload = mapLineup(await response.json());
+    res.setHeader('Cache-Control', 'public, s-maxage=90, stale-while-revalidate=60');
+    return res.status(200).json({ source: 'espn', league, id, updatedAt: new Date().toISOString(), ...payload });
+  } catch {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(502).json({ source: 'error', available: false, message: 'Gagal memuat susunan pemain dari ESPN. Silakan coba lagi.', teams: [] });
+  }
+}
+
+
 /* ---------- Handler ---------- */
 function reply(res, payload, seconds) {
   res.setHeader('Cache-Control', `public, s-maxage=${seconds}, stale-while-revalidate=${Math.min(seconds, 600)}`);
@@ -275,6 +327,7 @@ module.exports = async function handler(req, res) {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  if (req.query && req.query.type === 'lineup') return serveLineup(req, res, LEAGUES.flatMap(l => l.keys));
   if (req.query && req.query.type === 'article') {
     const id = String(req.query.id || '').trim();
     if (!/^\d{4,12}$/.test(id)) return res.status(400).json({ error: 'id berita tidak valid' });
