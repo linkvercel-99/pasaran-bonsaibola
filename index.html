@@ -174,6 +174,19 @@ html.dark{--lu-surface:#13240f;--lu-ink:#e6f2df;--lu-muted:#9fb393;--lu-border:#
 .lu-number{text-align:center;font-weight:800;background:var(--lu-tint);border-radius:4px;padding:3px 0;font-variant-numeric:tabular-nums}.lu-name{overflow-wrap:anywhere}.lu-position{font-size:10px;text-align:right;color:var(--lu-muted);overflow-wrap:anywhere}
 .lu-notice{font-size:13px;color:var(--lu-muted);padding:14px 0;line-height:1.6}.lu-retry{margin-top:12px;padding:8px 12px;border:1px solid var(--lu-border);border-radius:6px;background:var(--lu-tint);font-weight:700}
 body.lineup-open #toTop{visibility:hidden;pointer-events:none}
+.lu-tabs{display:flex;gap:6px;margin-bottom:14px}.lu-tab{flex:1;padding:8px 10px;border:1px solid var(--lu-border);border-radius:9999px;background:var(--lu-tint);font-size:12px;font-weight:800;color:var(--lu-ink)}.lu-tab[aria-selected="true"]{background:#16a34a;border-color:#16a34a;color:#fff}
+.lu-pitchwrap{max-width:520px;margin:0 auto}.lu-pteam{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;padding:6px 2px}.lu-pteam img{width:22px;height:22px;object-fit:contain}.lu-pteam span{margin-left:auto;color:var(--lu-muted);font-weight:700}
+.lu-pitch{position:relative;aspect-ratio:68/110;border-radius:8px;overflow:hidden;background:repeating-linear-gradient(0deg,#2f8f3a 0 9.09%,#2a8334 9.09% 18.18%);box-shadow:inset 0 0 0 2px rgba(255,255,255,.15)}
+.lu-pitch svg{position:absolute;inset:0;width:100%;height:100%}
+.lu-half{position:absolute;left:0;right:0;height:50%;display:flex;flex-direction:column;justify-content:space-around;padding:2% 0}.lu-half.top{top:0}.lu-half.bot{bottom:0;flex-direction:column-reverse}
+.lu-row{display:flex;justify-content:space-around;align-items:flex-start}
+.lu-pk{display:flex;flex-direction:column;align-items:center;width:20%;min-width:0;background:none;border:0;padding:0;cursor:pointer;position:relative}
+.lu-dot{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:900;font-variant-numeric:tabular-nums;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,.35)}
+.top .lu-dot{background:linear-gradient(#ef4444,#b91c1c);color:#fff}.bot .lu-dot{background:linear-gradient(#3b82f6,#1d4ed8);color:#fff}.lu-pk.gk .lu-dot{background:linear-gradient(#facc15,#f59e0b);color:#111}
+.lu-nm{margin-top:3px;max-width:100%;padding:1px 5px;border-radius:4px;background:rgba(0,0,0,.5);color:#fff;font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lu-tip{position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:#111;color:#fff;font-size:11px;padding:5px 8px;border-radius:6px;white-space:nowrap;z-index:3;display:none}.lu-pk.show .lu-tip{display:block}
+.lu-coachs{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--lu-muted);margin-top:8px}
+@media(max-width:400px){.lu-dot{width:26px;height:26px;font-size:11px}.lu-nm{font-size:9px}}
 @media(max-width:639px){.lu-grid{grid-template-columns:minmax(0,1fr);gap:20px}.lu-dialog{max-height:92dvh}.lu-content{padding:14px}}
 /* Tata letak rapi */
 .vtab{flex:1 1 0;justify-content:center;border-color:#1f3d1b !important}
@@ -786,6 +799,29 @@ function luTeam(t) {
   const logo = t.team && /^https:\/\//.test(t.team.logo || '') ? `<img src="${esc(t.team.logo)}" alt="" onerror="this.remove()">` : '';
   return `<section class="lu-team"><div class="lu-teamhead">${logo}<div><h3>${esc(name)}</h3><p class="lu-meta">${t.homeAway === 'home' ? 'Tuan Rumah' : 'Tim Tamu'}${t.formation ? ' · ' + esc(t.formation) : ''}</p></div></div>${t.coach ? `<p class="lu-meta">Pelatih: ${esc(t.coach)}</p>` : ''}<h4>Pemain Inti · ${t.starters.length}</h4>${t.starters.length ? `<ol>${luPlayers(t.starters)}</ol>` : '<p class="lu-notice">Susunan pemain tim ini belum tersedia.</p>'}<h4>Pemain Cadangan · ${t.bench.length}</h4>${t.bench.length ? `<ol>${luPlayers(t.bench)}</ol>` : '<p class="lu-notice">Data pemain cadangan belum tersedia.</p>'}</section>`;
 }
+
+function luShort(n){const p=String(n||'').trim().split(/\s+/);return p.length>1?p.slice(1).join(' '):p[0]||'–';}
+function luIsGK(p){return /^(g|gk|goalkeeper)$/i.test(String(p.position||'').trim());}
+function luRows(t){
+  const st=t.starters.slice(); if(!st.length) return [];
+  let gi=st.findIndex(luIsGK); if(gi<0) gi=0;
+  const gk=st.splice(gi,1)[0];
+  let f=String(t.formation||'').match(/\d+/g)?.map(Number).filter(n=>n>0)||[];
+  if(f.reduce((a,b)=>a+b,0)!==st.length) f=st.length===10?[4,4,2]:[st.length];
+  const rows=[[gk]];let i=0;f.forEach(n=>{rows.push(st.slice(i,i+n));i+=n;});
+  return rows;
+}
+function luPuck(p,gk){const full=esc(p.name)+(p.position?' · '+esc(p.position):'');return `<button type="button" class="lu-pk${gk?' gk':''}" title="${full}"><span class="lu-tip">${full}</span><span class="lu-dot">${esc(p.jersey||'–')}</span><span class="lu-nm">${esc(luShort(p.name))}</span></button>`;}
+function luHalf(t,cls){return `<div class="lu-half ${cls}">${luRows(t).map((r,ri)=>`<div class="lu-row">${r.map(p=>luPuck(p,ri===0)).join('')}</div>`).join('')}</div>`;}
+function luHeadRow(t){const n=t.team&&t.team.name||'Tim';const l=t.team&&/^https:\/\//.test(t.team.logo||'')?`<img src="${esc(t.team.logo)}" alt="" onerror="this.remove()">`:'';return `<div class="lu-pteam">${l}${esc(n)}<span>${esc(t.formation||'')}</span></div>`;}
+function luPitch(teams){
+  const home=teams.find(t=>t.homeAway==='home')||teams[0], away=teams.find(t=>t!==home)||{starters:[]};
+  const svg=`<svg viewBox="0 0 68 110" preserveAspectRatio="none" fill="none" stroke="rgba(255,255,255,.7)" stroke-width=".4"><rect x="2" y="2" width="64" height="106"/><line x1="2" y1="55" x2="66" y2="55"/><circle cx="34" cy="55" r="8"/><circle cx="34" cy="55" r=".6" fill="rgba(255,255,255,.7)"/><rect x="15" y="2" width="38" height="16"/><rect x="25" y="2" width="18" height="6"/><rect x="15" y="92" width="38" height="16"/><rect x="25" y="102" width="18" height="6"/><path d="M27 18a8 8 0 0 0 14 0M27 92a8 8 0 0 1 14 0"/></svg>`;
+  return `<div class="lu-pitchwrap">${luHeadRow(away)}<div class="lu-pitch">${svg}${away.starters.length?luHalf(away,'top'):''}${home.starters.length?luHalf(home,'bot'):''}</div>${luHeadRow(home)}<div class="lu-coachs"><span>${away.coach?'Pelatih '+esc(away.coach):''}</span><span>${home.coach?'Pelatih '+esc(home.coach):''}</span></div></div>`;
+}
+function luView(teams){
+  return `<div class="lu-tabs" role="tablist"><button type="button" class="lu-tab" role="tab" aria-selected="true" data-lu-tab="pitch">🏟️ Lapangan</button><button type="button" class="lu-tab" role="tab" aria-selected="false" data-lu-tab="list">📋 Daftar Nama</button></div><div data-lu-pane="pitch">${luPitch(teams)}</div><div data-lu-pane="list" hidden><div class="lu-grid">${teams.map(luTeam).join('')}</div></div>`;
+}
 function closeLineup() { if (luModal.open) luModal.close(); }
 luModal.addEventListener('close', () => {
   if (luRequest) luRequest.abort();
@@ -797,6 +833,9 @@ $('#luClose').addEventListener('click', closeLineup);
 luModal.addEventListener('click', e => {
   const r = luModal.getBoundingClientRect();
   if (e.target === luModal && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) closeLineup();
+  const tb=e.target.closest('[data-lu-tab]');
+  if (tb){luModal.querySelectorAll('[data-lu-tab]').forEach(b=>b.setAttribute('aria-selected',b===tb));luModal.querySelectorAll('[data-lu-pane]').forEach(p=>p.hidden=p.dataset.luPane!==tb.dataset.luTab);}
+  const pk=e.target.closest('.lu-pk');luModal.querySelectorAll('.lu-pk.show').forEach(x=>{if(x!==pk)x.classList.remove('show')});if(pk)pk.classList.toggle('show');
   if (e.target.closest('[data-lu-retry]') && luMatch) openLineup(luMatch.id, luTrigger);
 });
 async function openLineup(id, trigger) {
@@ -819,7 +858,7 @@ async function openLineup(id, trigger) {
     const p = await r.json();
     if (!r.ok) throw new Error(p.message || p.error || 'Gagal memuat susunan pemain.');
     if (request !== luRequest || !luModal.open) return;
-    $('#luContent').innerHTML = p.available ? `<div class="lu-grid">${(p.teams || []).map(luTeam).join('')}</div>` : '<p class="lu-notice">Susunan pemain belum resmi dirilis. Line up biasanya tersedia 45-60 menit sebelum pertandingan dimulai.</p><button type="button" class="lu-retry" data-lu-retry>↻ Periksa lagi</button>';
+    $('#luContent').innerHTML = p.available ? luView(p.teams || []) : '<p class="lu-notice">Susunan pemain belum resmi dirilis. Line up biasanya tersedia 45-60 menit sebelum pertandingan dimulai.</p><button type="button" class="lu-retry" data-lu-retry>↻ Periksa lagi</button>';
   } catch (e) {
     if (request.signal.aborted || request !== luRequest || !luModal.open) return;
     $('#luContent').innerHTML = `<p class="lu-notice">${esc(e.message || 'Gagal memuat susunan pemain dari ESPN.')}</p><button type="button" class="lu-retry" data-lu-retry>↻ Coba lagi</button>`;
