@@ -175,9 +175,30 @@ html.dark{--lu-surface:#13240f;--lu-ink:#e6f2df;--lu-muted:#9fb393;--lu-border:#
 .lu-notice{font-size:13px;color:var(--lu-muted);padding:14px 0;line-height:1.6}.lu-retry{margin-top:12px;padding:8px 12px;border:1px solid var(--lu-border);border-radius:6px;background:var(--lu-tint);font-weight:700}
 body.lineup-open #toTop{visibility:hidden;pointer-events:none}
 @media(max-width:639px){.lu-grid{grid-template-columns:minmax(0,1fr);gap:20px}.lu-dialog{max-height:92dvh}.lu-content{padding:14px}}
+/* Tata letak rapi */
+.vtab{flex:1 1 0;justify-content:center;border-color:#1f3d1b !important}
+.vtab.on{background:#4ade80 !important;color:#0a1408 !important;border-color:#4ade80 !important}
+body.view-berita .v-pasaran{display:none !important}
+body.view-pasaran .v-berita{display:none !important}
+.lg-head{cursor:pointer;user-select:none;width:100%;text-align:left}
+.lg-arrow{display:inline-block;width:14px;transition:transform .15s}
+.lg-sec.closed .lg-arrow{transform:rotate(-90deg)}
+.lg-sec.closed .lg-body{display:none}
+.lg-tools{display:flex;gap:6px}
+.lg-tools button{border-radius:9999px;border:1px solid #b9c9ad;background:#fff;padding:3px 10px;font-size:11px;font-weight:700;color:#1f2d1a}
+html.dark .lg-tools button{background:#13240f;border-color:#2c4a25;color:#e6f2df}
+.match .px-3.pt-3{padding-top:.5rem}
+@media(min-width:640px){.match .sm\:py-3{padding-top:.5rem;padding-bottom:.5rem}}
+.match .px-2.py-2{padding-top:.3rem;padding-bottom:.3rem}
+.match .mt-2{margin-top:.4rem}
+.lu-btn{margin-top:4px;padding:2px 6px;font-size:10px;border-radius:9999px}
+#list.space-y-4>:not([hidden])~:not([hidden]){margin-top:.6rem}
+.nw-more-btn{display:block;margin:12px auto 0;border-radius:9999px;border:1px solid #b9c9ad;background:#fff;padding:8px 18px;font-size:13px;font-weight:800;color:#1f2d1a}
+html.dark .nw-more-btn{background:#13240f;border-color:#2c4a25;color:#e6f2df}
+@media(max-width:639px){#hero{height:5.5rem}.bet-btn{padding:9px 14px;font-size:14px}}
 </style>
 </head>
-<body class="min-h-screen">
+<body class="min-h-screen view-pasaran">
 
 <!-- 1. TOPBAR: burger + logo + jam -->
 <header id="top" class="sticky top-0 z-30 bg-card border-b border-line text-white">
@@ -201,13 +222,13 @@ body.lineup-open #toTop{visibility:hidden;pointer-events:none}
 <!-- 1b. MENU NAVIGASI: lompat cepat ke Pasaran / Berita -->
 <nav class="bg-bg border-b border-line" aria-label="Menu utama">
   <div class="max-w-5xl mx-auto px-3 py-2 flex gap-1.5 overflow-x-auto no-sb">
-    <a href="#pasaran" class="shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 text-sm font-semibold text-white transition hover:border-lime/60" aria-label="Ke pasaran bola">⚽ Pasaran Bola</a>
-    <a href="#berita" class="shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 text-sm font-semibold text-white transition hover:border-lime/60" aria-label="Ke berita liga top dunia">📰 Berita Liga Top</a>
+    <a href="#pasaran" data-view="pasaran" class="vtab on shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 text-sm font-semibold text-white transition hover:border-lime/60" aria-label="Ke pasaran bola">⚽ Pasaran Bola</a>
+    <a href="#berita" data-view="berita" class="vtab shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border bg-card px-3 py-1.5 text-sm font-semibold text-white transition hover:border-lime/60" aria-label="Ke berita liga top dunia">📰 Berita Liga Top</a>
   </div>
 </nav>
 
 <!-- 2. KOLOM PENCARIAN -->
-<div class="bg-bg border-b border-line">
+<div class="v-pasaran bg-bg border-b border-line">
   <div class="max-w-5xl mx-auto px-3 py-2.5">
     <label class="block">
       <span class="sr-only">Cari tim atau liga</span>
@@ -230,19 +251,20 @@ body.lineup-open #toTop{visibility:hidden;pointer-events:none}
 </div>
 
 <!-- 3b. MENU LIGA (di bawah banner) -->
-<nav class="max-w-5xl mx-auto px-3 pt-3 space-y-2" aria-label="Pilih jadwal dan liga">
+<nav class="v-pasaran max-w-5xl mx-auto px-3 pt-3 space-y-2" aria-label="Pilih jadwal dan liga">
   <div id="days" class="no-sb flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Pilih tanggal"></div>
   <div id="hdays" class="hidden no-sb flex gap-1.5 overflow-x-auto pb-1" aria-label="Pilih tanggal riwayat"></div>
   <div id="leagues" class="no-sb flex gap-1.5 overflow-x-auto pb-1" aria-label="Pilih liga"></div>
 </nav>
 
 
-<main id="pasaran" class="max-w-5xl mx-auto px-3 py-4">
+<main id="pasaran" class="v-pasaran max-w-5xl mx-auto px-3 py-4">
   <div class="mb-2 flex items-center justify-between gap-2">
     <h2 id="cur" class="min-w-0 truncate text-base font-extrabold text-ink">Hari Ini</h2>
   </div>
   <div class="mb-3 flex items-center justify-between gap-2 text-xs text-lmute">
     <span id="upd">Memuat…</span>
+    <span class="lg-tools"><button type="button" data-lgall="1">Buka Semua</button><button type="button" data-lgall="0">Tutup Semua</button></span>
     <button id="reload" class="shrink-0 rounded-full border border-lline bg-lcard px-3 py-1 font-semibold text-ink hover:bg-lhead">↻ Perbarui</button>
   </div>
   <div id="banner" class="hidden mb-3 rounded-lg border border-lline bg-lhead px-3 py-2 text-xs text-ink"></div>
@@ -251,13 +273,14 @@ body.lineup-open #toTop{visibility:hidden;pointer-events:none}
 </main>
 
 <!-- 4. BERITA LIGA TOP DUNIA -->
-<section id="berita" class="max-w-5xl mx-auto px-3 pb-6" aria-labelledby="nwTitle">
+<section id="berita" class="v-berita max-w-5xl mx-auto px-3 py-4" aria-labelledby="nwTitle">
   <div class="mb-2 flex items-center justify-between gap-2">
     <h2 id="nwTitle" class="text-base font-extrabold text-ink">📰 Berita Liga Top Dunia</h2>
     <span id="nwUpd" class="text-xs text-lmute"></span>
   </div>
   <div id="nwTabs" class="nw-tabs" role="tablist" aria-label="Filter berita liga"></div>
   <div id="nwList" class="nw-grid" aria-live="polite"><div class="nw-empty">Memuat berita…</div></div>
+  <button id="nwMore" type="button" class="nw-more-btn" hidden>Muat Lebih Banyak Berita (+6)</button>
   <p class="mt-2 text-center text-xs text-lmute">Sumber berita: ESPN · diterjemahkan otomatis ke Bahasa Indonesia.</p>
 </section>
 
@@ -545,14 +568,20 @@ function renderList() {
   const groups = {};
   ms.forEach(m => (groups[m.league] = groups[m.league] || []).push(m));
   const order = Object.keys(groups).sort((x, y) => groups[x][0].order - groups[y][0].order);
-  $('#list').innerHTML = order.map(l => `
-    <section class="overflow-hidden rounded-xl border border-lline bg-lcard">
-      <div class="flex items-center justify-between bg-lhead border-b-2 border-[#55cb47] px-3 py-2">
-        <h2 class="text-sm font-bold">${esc(l)}<span class="ml-2 text-xs font-medium text-lmute">${esc(groups[l][0].country || '')}</span></h2>
+  const isOpen = (l, i) => {
+    if (l in lgOpen) return lgOpen[l];
+    if (state.q.trim() || state.league !== 'Semua Liga' || order.length <= 3) return true;
+    return i < 3 || groups[l].some(m => status(m).s === 'live');
+  };
+  $('#list').innerHTML = order.map((l, i) => {
+    const open = isOpen(l, i);
+    return `<section class="lg-sec ${open ? '' : 'closed'} overflow-hidden rounded-xl border border-lline bg-lcard">
+      <button type="button" class="lg-head flex items-center justify-between bg-lhead border-b-2 border-[#55cb47] px-3 py-2" data-lgtoggle="${esc(l)}" aria-expanded="${open}">
+        <h2 class="text-sm font-bold"><span class="lg-arrow">▾</span>${esc(l)}<span class="ml-2 text-xs font-medium text-lmute">${esc(groups[l][0].country || '')}</span></h2>
         <span class="text-xs text-lmute">${groups[l].length} laga</span>
-      </div>
-      ${groups[l].map(matchHtml).join('')}
-    </section>`).join('');
+      </button>
+      <div class="lg-body">${groups[l].map(matchHtml).join('')}</div>
+    </section>`; }).join('');
 }
 
 function renderUpd() {
@@ -605,6 +634,24 @@ function copyMatch(id) {
   copyText(t).then(() => toast('Tersalin: ' + t));
 }
 
+/* ================= TAMPILAN (TAB & ACCORDION) ================= */
+const lgOpen = {};
+function setView(v, scroll) {
+  document.body.classList.toggle('view-pasaran', v === 'pasaran');
+  document.body.classList.toggle('view-berita', v === 'berita');
+  document.querySelectorAll('[data-view]').forEach(a => { const on = a.dataset.view === v; a.classList.toggle('on', on); a.setAttribute('aria-current', on ? 'page' : 'false'); });
+  if (scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+document.addEventListener('click', e => {
+  const v = e.target.closest('[data-view]');
+  if (v) { e.preventDefault(); history.replaceState(null, '', '#' + v.dataset.view); setView(v.dataset.view, true); return; }
+  const t = e.target.closest('[data-lgtoggle]');
+  if (t) { const sec = t.closest('.lg-sec'), open = sec.classList.contains('closed'); sec.classList.toggle('closed', !open); t.setAttribute('aria-expanded', open); lgOpen[t.dataset.lgtoggle] = open; e.stopPropagation(); return; }
+  const a = e.target.closest('[data-lgall]');
+  if (a) { const open = a.dataset.lgall === '1'; document.querySelectorAll('[data-lgtoggle]').forEach(b => { lgOpen[b.dataset.lgtoggle] = open; }); renderList(); }
+}, true);
+if (location.hash === '#berita') setView('berita');
+
 /* ================= EVENTS ================= */
 document.addEventListener('click', e => {
   const lu = e.target.closest('[data-lineup]');
@@ -637,7 +684,7 @@ document.addEventListener('visibilitychange', () => {             // tab dibuka 
 refresh();
 
 /* ================= BERITA ================= */
-const news = { list: [], league: 'Semua', err: '' };
+const news = { list: [], league: 'Semua', err: '', limit: 6 };
 const NEWS_TABS = ['Semua', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Champions League'];
 function timeAgo(iso) {
   const t = Date.parse(iso); if (!t) return '';
@@ -656,8 +703,9 @@ function renderNews() {
   $('#nwTabs').innerHTML = NEWS_TABS.map(l => `<button type="button" role="tab" aria-selected="${news.league === l}" data-nw="${esc(l)}" class="nw-tab ${news.league === l ? 'on' : ''}">${esc(l)}</button>`).join('');
   if (news.err && !news.list.length) { $('#nwList').innerHTML = `<div class="nw-empty">${esc(news.err)}</div>`; return; }
   const items = news.list.filter(n => news.league === 'Semua' || n.league === news.league);
-  if (!items.length) { $('#nwList').innerHTML = `<div class="nw-empty">Belum ada berita untuk liga ini.</div>`; return; }
-  $('#nwList').innerHTML = items.map(n => {
+  if (!items.length) { $('#nwMore').hidden = true; $('#nwList').innerHTML = `<div class="nw-empty">Belum ada berita untuk liga ini.</div>`; return; }
+  $('#nwMore').hidden = items.length <= news.limit;
+  $('#nwList').innerHTML = items.slice(0, news.limit).map(n => {
     const img = pickImg(n.images), href = (n.links && (n.links.web || n.links.mobile)) || '#';
     return `<button type="button" class="nw-card" data-nid="${esc(n.id)}" aria-label="Buka berita: ${esc(n.headline)}">
       ${img ? `<img class="nw-img" src="${esc(img.url)}" ${img.width ? `width="${img.width}" height="${img.height || ''}"` : ''} alt="${esc(img.caption || n.headline)}" loading="lazy" decoding="async" onerror="this.remove()">` : ''}
@@ -680,7 +728,8 @@ async function loadNews() {
   } catch (e) { news.err = 'Gagal memuat berita (' + e.message + ').'; }
   renderNews();
 }
-document.addEventListener('click', e => { const b = e.target.closest('[data-nw]'); if (b) { news.league = b.dataset.nw; renderNews(); } });
+document.addEventListener('click', e => { const b = e.target.closest('[data-nw]'); if (b) { news.league = b.dataset.nw; news.limit = 6; renderNews(); } });
+$('#nwMore').addEventListener('click', () => { news.limit += 6; renderNews(); });
 
 /* ================= POPUP BERITA ================= */
 const nwModal = $('#nwModal');
