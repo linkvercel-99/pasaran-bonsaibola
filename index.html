@@ -402,6 +402,176 @@ html.dark .mc-dialog {
 .sq-player-item { display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 0.5rem; border-radius: 0.375rem; font-size: 0.8125rem; }
 .sq-player-item:nth-child(even) { background: rgba(255,255,255,0.02); }
   
+/* ===== PINTARBOLA MATCH CENTER REDESIGN ===== */
+
+.mc-dialog {
+  background: #f4f7f5 !important;
+  color: #1d2b22 !important;
+  font-family: inherit;
+}
+
+.mc-dialog .mc-header {
+  background: #ffffff !important;
+  border-bottom: 1px solid #e2e9e3 !important;
+  padding: 22px 24px 18px !important;
+}
+
+.mc-dialog .mc-matchup {
+  max-width: 900px;
+  margin: 18px auto 10px;
+  align-items: center;
+  gap: 20px;
+}
+
+.mc-dialog .mc-team-col {
+  min-width: 0;
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.mc-dialog .mc-team-col:hover {
+  background: #f2f8f3;
+}
+
+.mc-dialog .mc-team-logo {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 8px;
+}
+
+.mc-dialog .mc-team-name {
+  max-width: 180px;
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.mc-dialog .mc-score-num {
+  font-size: clamp(30px, 4vw, 42px);
+  line-height: 1.1;
+  letter-spacing: -1px;
+  color: #183d27;
+}
+
+.mc-dialog .mc-status-badge {
+  margin-top: 8px;
+  background: #dcfce7;
+  color: #15803d;
+  padding: 5px 12px;
+  border-radius: 999px;
+}
+
+.mc-dialog .mc-tabs {
+  gap: 6px;
+  padding: 12px 20px;
+  background: #ffffff !important;
+  border-bottom: 1px solid #e2e9e3 !important;
+  scrollbar-width: thin;
+}
+
+.mc-dialog .mc-tab-btn {
+  padding: 10px 15px;
+  border-radius: 9px;
+  color: #647368;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.mc-dialog .mc-tab-btn.active {
+  background: #16a34a !important;
+  color: #ffffff !important;
+}
+
+.mc-dialog .mc-content {
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+/* Kartu informasi */
+.mc-dialog .mc-content > * {
+  box-sizing: border-box;
+}
+
+.mc-dialog .mc-empty {
+  background: #ffffff;
+  border: 1px solid #e2e9e3;
+  border-radius: 14px;
+  padding: 32px 20px;
+  color: #647368;
+}
+
+/* Mode gelap */
+html.dark .mc-dialog {
+  background: #101a14 !important;
+  color: #e6f2e9 !important;
+}
+
+html.dark .mc-dialog .mc-header,
+html.dark .mc-dialog .mc-tabs {
+  background: #17251b !important;
+  border-color: #2b3d30 !important;
+}
+
+html.dark .mc-dialog .mc-team-col:hover {
+  background: #203327;
+}
+
+html.dark .mc-dialog .mc-score-num {
+  color: #e6f2e9;
+}
+
+html.dark .mc-dialog .mc-content {
+  color: #e6f2e9;
+}
+
+html.dark .mc-dialog .mc-empty {
+  background: #17251b;
+  border-color: #2b3d30;
+  color: #a6b8aa;
+}
+
+/* Tampilan HP */
+@media (max-width: 639px) {
+  .mc-dialog .mc-header {
+    padding: 16px 12px !important;
+  }
+
+  .mc-dialog .mc-matchup {
+    gap: 4px;
+    margin: 12px auto 8px;
+  }
+
+  .mc-dialog .mc-team-logo {
+    width: 44px;
+    height: 44px;
+  }
+
+  .mc-dialog .mc-team-name {
+    font-size: 12px;
+  }
+
+  .mc-dialog .mc-score-box {
+    padding: 0 5px;
+  }
+
+  .mc-dialog .mc-tabs {
+    padding: 10px 12px;
+  }
+
+  .mc-dialog .mc-tab-btn {
+    padding: 9px 12px;
+    font-size: 12px;
+  }
+
+  .mc-dialog .mc-content {
+    padding: 14px;
+  }
+}
+
 </style>
 </head>
 <body class="min-h-screen view-pasaran">
