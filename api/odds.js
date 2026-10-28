@@ -4,10 +4,11 @@ const ESPN = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const CACHE_SECONDS = Math.max(600, parseInt(process.env.CACHE_SECONDS, 10) || 600); // 10 menit (600 detik) anti-spam
 const DAYS = 3;         // Hari Ini, Besok, Lusa
 const HISTORY = 3;      // Riwayat: 3 hari sebelumnya
-const CONCURRENCY = 10;
+const CONCURRENCY = 12;
 const TZ = "Asia/Jakarta";
 
 // [kode liga ESPN, nama, negara, grup pill di index.html, logo resmi ESPN]
+// Nama liga HARUS sama persis dengan tombol di FILTERS (index.html) jika ingin punya tombol sendiri.
 const L = (keys, name, country, group = "Lainnya", logo = "") => ({ keys: [].concat(keys), name, country, group, logo });
 const LEAGUES = [
   L("eng.1", "Premier League", "Inggris", "Premier League", "https://a.espncdn.com/i/leaguelogos/soccer/500/23.png"),
@@ -40,13 +41,68 @@ const LEAGUES = [
   L("mex.1", "Liga MX", "Meksiko", "Lainnya", "https://a.espncdn.com/i/leaguelogos/soccer/500/22.png"),
   L("arg.1", "Liga Argentina", "Argentina", "Lainnya", "https://a.espncdn.com/i/leaguelogos/soccer/500/1.png"),
   L("conmebol.libertadores", "Copa Libertadores", "Amerika Selatan", "Lainnya", "https://a.espncdn.com/i/leaguelogos/soccer/500/58.png"),
-  L("conmebol.sudamericana", "Copa Sudamericana", "Amerika Selatan", "Lainnya", "https://a.espncdn.com/i/leaguelogos/soccer/500/1208.png")
+  L("conmebol.sudamericana", "Copa Sudamericana", "Amerika Selatan", "Lainnya", "https://a.espncdn.com/i/leaguelogos/soccer/500/1208.png"),
+
+  /* ===== TAMBAHAN BARU ===== */
+  // AFC
+  L("afc.champions", "AFC Champions League Elite", "Asia", "AFC Champions League Elite"),
+  L("afc.cup", "AFC Champions League Two", "Asia", "AFC Champions League Two"),
+  // Liga Asia lain
+  L("kor.1", "K League 1", "Korea Selatan", "Liga Asia"),
+  L("tha.1", "Thai League 1", "Thailand", "Liga Asia"),
+  L("mys.1", "Liga Super Malaysia", "Malaysia", "Liga Asia"),
+  L("sgp.1", "Singapore Premier League", "Singapura", "Liga Asia"),
+  L("ind.1", "Indian Super League", "India", "Liga Asia"),
+  L("uae.1", "UAE Pro League", "Uni Emirat Arab", "Liga Asia"),
+  L("qat.1", "Qatar Stars League", "Qatar", "Liga Asia"),
+  // Piala domestik
+  L("eng.fa", "FA Cup", "Inggris", "Piala Domestik"),
+  L("eng.league_cup", "EFL Cup", "Inggris", "Piala Domestik"),
+  L("esp.copa_del_rey", "Copa del Rey", "Spanyol", "Piala Domestik"),
+  L("ita.coppa_italia", "Coppa Italia", "Italia", "Piala Domestik"),
+  L("ger.dfb_pokal", "DFB-Pokal", "Jerman", "Piala Domestik"),
+  L("fra.coupe_de_france", "Coupe de France", "Prancis", "Piala Domestik"),
+  // Timnas & turnamen
+  L("fifa.world", "Piala Dunia", "Dunia", "Timnas"),
+  L("fifa.friendly", "Laga Persahabatan Internasional", "Dunia", "Timnas"),
+  L("fifa.worldq.afc", "Kualifikasi Piala Dunia AFC", "Asia", "Timnas"),
+  L("fifa.worldq.uefa", "Kualifikasi Piala Dunia UEFA", "Eropa", "Timnas"),
+  L("fifa.worldq.conmebol", "Kualifikasi Piala Dunia CONMEBOL", "Amerika Selatan", "Timnas"),
+  L("uefa.euro", "Euro", "Eropa", "Timnas"),
+  L("uefa.euroq", "Kualifikasi Euro", "Eropa", "Timnas"),
+  L("conmebol.america", "Copa America", "Amerika Selatan", "Timnas"),
+  L("concacaf.gold", "Gold Cup", "Amerika Utara", "Timnas"),
+  L("caf.nations", "Piala Afrika", "Afrika", "Timnas"),
+  L("afc.asian.cup", "Piala Asia", "Asia", "Timnas"),
+  // Liga lainnya
+  L("eng.4", "League Two", "Inggris", "Liga Lainnya"),
+  L("gre.1", "Super League Yunani", "Yunani", "Liga Lainnya"),
+  L("rus.1", "Liga Premier Rusia", "Rusia", "Liga Lainnya"),
+  L("den.1", "Superliga Denmark", "Denmark", "Liga Lainnya"),
+  L("swe.1", "Allsvenskan", "Swedia", "Liga Lainnya"),
+  L("nor.1", "Eliteserien", "Norwegia", "Liga Lainnya"),
+  L("sui.1", "Super League Swiss", "Swiss", "Liga Lainnya"),
+  L("aut.1", "Bundesliga Austria", "Austria", "Liga Lainnya"),
+  L("chi.1", "Primera Chile", "Chile", "Liga Lainnya"),
+  L("col.1", "Liga Kolombia", "Kolombia", "Liga Lainnya"),
+  L("uru.1", "Primera Uruguay", "Uruguay", "Liga Lainnya"),
+  L("caf.champions", "CAF Champions League", "Afrika", "Liga Lainnya"),
+  L("concacaf.champions", "CONCACAF Champions Cup", "Amerika Utara", "Liga Lainnya")
 ];
 
 /* ---------- ESPN API ---------- */
+// Cara lama: 1 permintaan per liga per hari (dipakai sebagai cadangan)
 async function espnDay(code, ymd) {
-  const res = await fetch(`${ESPN}/${code}/scoreboard?dates=${ymd}`, { headers: { Accept: "application/json" } });
+  const res = await fetch(`${ESPN}/${code}/scoreboard?dates=${ymd}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
   if (res.status === 400 || res.status === 404) return [];
+  if (!res.ok) { const e = new Error("HTTP " + res.status); e.status = res.status; throw e; }
+  return (await res.json()).events || [];
+}
+
+// Cara baru: 1 permintaan per liga untuk seluruh rentang tanggal (jauh lebih hemat)
+async function espnRange(code, from, to) {
+  const res = await fetch(`${ESPN}/${code}/scoreboard?dates=${from}-${to}&limit=500`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(6000) });
+  if (res.status >= 400 && res.status < 500 && res.status !== 429) return [];  // kode liga tidak ada = lewati saja
   if (!res.ok) { const e = new Error("HTTP " + res.status); e.status = res.status; throw e; }
   return (await res.json()).events || [];
 }
@@ -126,7 +182,8 @@ function ymdList() {
   return out;
 }
 
-async function fetchLive() {
+// Cadangan: cara lama (1 permintaan per liga per hari)
+async function fetchLiveByDay() {
   const tasks = [];
   LEAGUES.forEach((cfg, order) => ymdList().forEach(ymd => tasks.push({ code: cfg.keys[0], ymd, cfg, order })));
   const results = await allSettledLimited(tasks, CONCURRENCY, t => espnDay(t.code, t.ymd));
@@ -142,6 +199,28 @@ async function fetchLive() {
       seen.add(m.id); events.push(m);
     });
   });
+  events.sort((a, b) => a.ts - b.ts);
+  return { events, failed };
+}
+
+// Utama: 1 permintaan per liga untuk seluruh rentang tanggal
+async function fetchLive() {
+  const days = ymdList(), from = days[0], to = days[days.length - 1];
+  const tasks = LEAGUES.map((cfg, order) => ({ cfg, order }));
+  const results = await allSettledLimited(tasks, CONCURRENCY, t => espnRange(t.cfg.keys[0], from, to));
+  const failed = results.filter(r => r.status === "rejected").map(r => r.reason);
+  if (failed.length === tasks.length) throw failed[0];
+  const fromMs = Date.now() - (HISTORY + 1) * 864e5, toMs = Date.now() + (DAYS + 1) * 864e5;
+  const seen = new Set(), events = [];
+  results.forEach((r, i) => {
+    if (r.status !== "fulfilled") return;
+    r.value.forEach(ev => {
+      const m = mapEvent(ev, tasks[i].cfg, tasks[i].order);
+      if (seen.has(m.id) || !m.ts || m.ts < fromMs || m.ts > toMs) return;
+      seen.add(m.id); events.push(m);
+    });
+  });
+  if (!events.length) return fetchLiveByDay();   // cadangan: cara lama
   events.sort((a, b) => a.ts - b.ts);
   return { events, failed };
 }
