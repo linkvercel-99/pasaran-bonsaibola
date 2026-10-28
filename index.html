@@ -1844,7 +1844,10 @@ async function openMatchCenter(id) {
 
   // Isi Header Match Center
   const leagueEl = document.getElementById('mcMLeague');
-  if (leagueEl) leagueEl.textContent = `${m.league || 'Kompetisi'} · ${m.country || 'Sepak Bola'}`;
+  if (leagueEl) {
+    const lLogo = m.leagueLogo || '';
+    leagueEl.innerHTML = (lLogo ? `<img src="${lLogo}" alt="" class="w-3.5 h-3.5 object-contain inline-block -mt-0.5 mr-1.5" onerror="this.style.display='none'">` : '') + `${m.league || 'Kompetisi'} · ${m.country || 'Sepak Bola'}`;
+  }
   
   const homeNameEl = document.getElementById('mcHomeName');
   if (homeNameEl) homeNameEl.textContent = m.home || 'Home';
@@ -1950,6 +1953,12 @@ async function loadMatchDetails(league, eventId) {
     const data = json.match || json;
     currentMatchDetails = data;
     mcCache[cacheKey] = { time: now, data };
+    if (data?.leagueLogo) {
+      const leagueEl = document.getElementById('mcMLeague');
+      if (leagueEl) {
+        leagueEl.innerHTML = `<img src="${data.leagueLogo}" alt="" class="w-3.5 h-3.5 object-contain inline-block -mt-0.5 mr-1.5" onerror="this.style.display='none'">${m.league || data.leagueName || 'Kompetisi'} · ${m.country || 'Sepak Bola'}`;
+      }
+    }
   } catch (err) {
     currentMatchDetails = null;
   }
@@ -2145,57 +2154,111 @@ function renderActiveTab() {
       </div>`;
   } 
   else if (activeMcTab === 'standings') {
-    const st = det?.standings?.entries || det?.standings?.groups?.[0]?.standings?.entries || [];
-    if (!st.length) {
+    let groups = [];
+    if (det?.standings?.groups && Array.isArray(det.standings.groups) && det.standings.groups.length) {
+      groups = det.standings.groups.map(g => ({
+        title: g.header || det.standings.header || m.league || 'Klasemen',
+        entries: g.standings?.entries || []
+      })).filter(g => g.entries.length > 0);
+    } else if (det?.standings?.entries && Array.isArray(det.standings.entries) && det.standings.entries.length) {
+      groups = [{
+        title: det.standings.header || m.league || 'Klasemen',
+        entries: det.standings.entries
+      }];
+    } else if (det?.standings?.children && Array.isArray(det.standings.children) && det.standings.children.length) {
+      groups = det.standings.children.map(c => ({
+        title: c.name || det.standings.name || m.league || 'Klasemen',
+        entries: c.standings?.entries || []
+      })).filter(g => g.entries.length > 0);
+    }
+
+    if (!groups.length) {
       mcContent.innerHTML = emptyStateHtml('Klasemen untuk liga ini belum tersedia');
       return;
     }
+
+    const leagueLogo = det?.leagueLogo
+      || det?.match?.leagueLogo
+      || (Array.isArray(det?.header?.league?.logos) && det.header.league.logos[0]?.href)
+      || m?.leagueLogo
+      || '';
+    const leagueName = det?.leagueName
+      || det?.match?.leagueName
+      || det?.header?.league?.name
+      || m?.league
+      || 'Klasemen';
+
     mcContent.innerHTML = `
-      <div class="mc-card">
-        <div class="mc-card-head">
-          <div class="mc-card-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/></svg>
-            <span>Klasemen Sementara</span>
+      <div class="space-y-4">
+        ${groups.map(grp => `
+          <div class="mc-card">
+            <div class="mc-card-head flex items-center justify-between flex-wrap gap-2">
+              <div class="mc-card-title flex items-center gap-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/></svg>
+                <span>${grp.title || 'Klasemen Sementara'}</span>
+              </div>
+              <div class="mc-league-badge flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold text-lime bg-lime/10 border border-lime/30">
+                ${leagueLogo ? `<img src="${leagueLogo}" alt="" class="w-4 h-4 object-contain flex-shrink-0" onerror="this.style.display='none'">` : ''}
+                <span class="truncate max-w-[180px]">${leagueName}</span>
+              </div>
+            </div>
+            
+            <div class="mc-table-wrap">
+              <table class="mc-standings-table">
+                <thead>
+                  <tr>
+                    <th style="width:38px;">#</th>
+                    <th class="text-left">Klub</th>
+                    <th>Main</th>
+                    <th>M</th>
+                    <th>S</th>
+                    <th>K</th>
+                    <th>SG</th>
+                    <th>Poin</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${grp.entries.map((r, idx) => {
+                    const teamName = (typeof r.team === 'string' ? r.team : (r.team?.displayName || r.team?.name)) || 'Tim';
+                    const teamId = r.id || r.team?.id || '';
+                    const teamLogo = (Array.isArray(r.logo) && r.logo[0]?.href)
+                      || (Array.isArray(r.team?.logos) && r.team.logos[0]?.href)
+                      || (typeof r.team?.logo === 'string' ? r.team.logo : '')
+                      || (teamId ? `https://a.espncdn.com/i/teamlogos/soccer/500/${teamId}.png` : '');
+
+                    const isH = (teamName && m.home && teamName.toLowerCase() === m.home.toLowerCase()) || (teamId && m.homeId && String(teamId) === String(m.homeId));
+                    const isA = (teamName && m.away && teamName.toLowerCase() === m.away.toLowerCase()) || (teamId && m.awayId && String(teamId) === String(m.awayId));
+                    const hl = (isH || isA) ? 'is-active' : '';
+
+                    const s = r.stats || [];
+                    const val = n => s.find(x => x.name === n)?.displayValue || '0';
+                    const rank = s.find(x => x.name === 'rank')?.displayValue || r.seed || (idx + 1);
+
+                    return `
+                      <tr class="mc-standings-row ${hl}">
+                        <td class="font-bold text-center">
+                          <span class="inline-flex items-center justify-center w-6 h-6 rounded text-xs ${idx < 4 ? 'bg-lime/15 text-lime font-bold' : 'text-lmute font-semibold'}">${rank}</span>
+                        </td>
+                        <td class="text-left font-bold">
+                          <div class="flex items-center gap-2 min-w-0">
+                            ${teamLogo ? `<img src="${teamLogo}" alt="" class="w-5 h-5 object-contain flex-shrink-0 rounded-full bg-white/5 p-0.5" onerror="this.style.display='none'">` : '<div class="w-5 h-5 rounded-full bg-line/20 flex-shrink-0"></div>'}
+                            <span class="truncate max-w-[130px] sm:max-w-[180px] md:max-w-[220px]" title="${teamName}">${teamName}</span>
+                            ${(isH || isA) ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-lime/20 text-lime font-extrabold uppercase tracking-wider flex-shrink-0">${isH ? 'Home' : 'Away'}</span>` : ''}
+                          </div>
+                        </td>
+                        <td>${val('gamesPlayed')}</td>
+                        <td class="font-semibold text-emerald-500 dark:text-emerald-400">${val('wins')}</td>
+                        <td class="text-amber-500 dark:text-amber-400">${val('ties')}</td>
+                        <td class="text-rose-500 dark:text-rose-400">${val('losses')}</td>
+                        <td>${val('pointDifferential')}</td>
+                        <td class="font-extrabold text-lime">${val('points')}</td>
+                      </tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <span class="text-xs text-lime font-bold">${m.league}</span>
-        </div>
-        
-        <div class="mc-table-wrap">
-          <table class="mc-standings-table">
-            <thead>
-              <tr>
-                <th style="width:36px;">#</th>
-                <th class="text-left">Klub</th>
-                <th>Main</th>
-                <th>M</th>
-                <th>S</th>
-                <th>K</th>
-                <th>SG</th>
-                <th>Poin</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${st.map(r => {
-                const isH = r.team?.displayName === m.home;
-                const isA = r.team?.displayName === m.away;
-                const hl = (isH || isA) ? 'is-active' : '';
-                const s = r.stats || [];
-                const val = n => s.find(x => x.name === n)?.displayValue || '0';
-                return `
-                  <tr class="mc-standings-row ${hl}">
-                    <td><strong>${r.seed || '-'}</strong></td>
-                    <td class="text-left font-bold truncate max-w-[150px]">${r.team?.displayName || 'Tim'}</td>
-                    <td>${val('gamesPlayed')}</td>
-                    <td>${val('wins')}</td>
-                    <td>${val('ties')}</td>
-                    <td>${val('losses')}</td>
-                    <td>${val('pointDifferential')}</td>
-                    <td class="font-extrabold text-lime">${val('points')}</td>
-                  </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
+        `).join('')}
       </div>`;
   } 
   else if (activeMcTab === 'h2h') {
