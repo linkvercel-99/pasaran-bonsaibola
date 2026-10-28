@@ -887,12 +887,12 @@ document.addEventListener('click', e => {
   else if (d) { const t = d.dataset.tab; state.tab = isNaN(+t) ? t : +t; renderAll(); }
   else if (hd) { state.hday = +hd.dataset.hday; renderAll(); }
   else if (l) { state.league = l.dataset.league; renderFilters(); renderList(); }
-  else if (m) copyMatch(m.dataset.id);
+  else if (m) openMatchCenter(m.dataset.id);
 });
 document.addEventListener('keydown', e => {
   if (e.target.closest && e.target.closest('[data-lineup]')) return;
   const m = e.target.closest && e.target.closest('[data-id]');
-  if (m && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); copyMatch(m.dataset.id); }
+  if (m && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openMatchCenter(m.dataset.id); }
 });
 $('#reload').addEventListener('click', () => refresh(true));
 $('#q').addEventListener('input', e => { state.q = e.target.value; renderList(); });
@@ -1107,6 +1107,394 @@ s();b.addEventListener('click',function(){var d=document.documentElement.classLi
     if (h) { h.setAttribute('tabindex','-1'); h.focus({preventScroll:true}); }
   });
 })();
+/* ================= MATCH CENTER (8 TAB) & SKUAD KLUB ================= */
+const mcModal = document.getElementById('mcModal');
+const sqModal = document.getElementById('sqModal');
+const mcContent = document.getElementById('mcContent');
+const sqContent = document.getElementById('sqContent');
+
+// Cache memori browser 10 menit (agar klik bolak-balik instan 0 detik)
+const mcCache = {};
+const sqCache = {};
+let currentMatchData = null;
+let currentMatchLeague = '';
+let activeMcTab = 'info';
+
+// SVG Ikon bersih profesional (tanpa emoji)
+const SVG_ICONS = {
+  info: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inline-block mr-1"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>',
+  empty: '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto mb-2 text-lmute"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>',
+  copy: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inline-block mr-1.5"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>'
+};
+
+function emptyStateHtml(msg = 'Data belum tersedia untuk pertandingan ini') {
+  return `<div class="mc-empty">
+    ${SVG_ICONS.empty}
+    <div class="font-semibold text-ink">${msg}</div>
+    <p class="text-xs text-lmute mt-1">Data belum dirilis dari sumber resmi atau sedang diperbarui.</p>
+  </div>`;
+}
+
+// Buka Match Center saat baris laga diklik
+async function openMatchCenter(id) {
+  const m = state.all.find(x => String(x.id) === String(id));
+  if (!m) return;
+
+  currentMatchData = m;
+  const leagueObj = LEAGUES.find(l => l.name === m.league);
+  currentMatchLeague = leagueObj ? leagueObj.keys[0] : 'eng.1';
+
+  // Isi Header Match Center
+  document.getElementById('mcMLeague').textContent = `${m.league} · ${m.country || ''}`;
+  document.getElementById('mcHomeName').textContent = m.home;
+  document.getElementById('mcAwayName').textContent = m.away;
+  document.getElementById('mcHomeLogo').src = m.homeLogo || '';
+  document.getElementById('mcAwayLogo').src = m.awayLogo || '';
+
+  const sc = m.score && m.score[0] != null && m.score[0] !== '' ? `${m.score[0]} - ${m.score[1]}` : 'VS';
+  document.getElementById('mcScore').textContent = sc;
+  document.getElementById('mcStatus').textContent = m.statusText || (m.live ? 'LIVE' : fmtTime(m.ts));
+
+  // Reset tab ke Info
+  setMcTab('info');
+  if (mcModal.showModal) mcModal.showModal(); else mcModal.setAttribute('open', '');
+
+  // Muat data detail dengan cache 10 menit
+  await loadMatchDetails(currentMatchLeague, m.id);
+}
+
+// Navigasi 8 Tab
+function setMcTab(tab) {
+  activeMcTab = tab;
+  document.querySelectorAll('.mc-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mctab === tab);
+  });
+  renderActiveTab();
+}
+
+// Event delegasi klik tab di Match Center
+document.querySelector('.mc-tabs')?.addEventListener('click', e => {
+  const btn = e.target.closest('.mc-tab-btn');
+  if (btn) setMcTab(btn.dataset.mctab);
+});
+
+// Tutup dialog Match Center & Skuad
+document.getElementById('mcClose')?.addEventListener('click', () => {
+  if (mcModal.close) mcModal.close(); else mcModal.removeAttribute('open');
+});
+document.getElementById('sqClose')?.addEventListener('click', () => {
+  if (sqModal.close) sqModal.close(); else sqModal.removeAttribute('open');
+});
+
+// Klik logo tim di Match Center -> Buka Skuad Klub
+document.getElementById('mcHomeBtn')?.addEventListener('click', () => {
+  if (currentMatchData) openSquad(currentMatchData.homeId, currentMatchData.home, currentMatchData.homeLogo, currentMatchData.league);
+});
+document.getElementById('mcAwayBtn')?.addEventListener('click', () => {
+  if (currentMatchData) openSquad(currentMatchData.awayId, currentMatchData.away, currentMatchData.awayLogo, currentMatchData.league);
+});
+
+// Tombol Kembali di Skuad Klub -> Balik ke Match Center
+document.getElementById('sqBack')?.addEventListener('click', () => {
+  if (sqModal.close) sqModal.close(); else sqModal.removeAttribute('open');
+  if (mcModal.showModal) mcModal.showModal(); else mcModal.setAttribute('open', '');
+});
+
+// Ambil detail data dari API dengan Cache 10 Menit (600.000 ms)
+async function loadMatchDetails(league, id) {
+  const cacheKey = `${league}_${id}`;
+  const now = Date.now();
+
+  if (mcCache[cacheKey] && (now - mcCache[cacheKey].time < 600000)) {
+    currentMatchDetails = mcCache[cacheKey].data;
+    renderActiveTab();
+    return;
+  }
+
+  mcContent.innerHTML = '<div class="mc-empty"><div class="animate-pulse">Memuat data pertandingan…</div></div>';
+
+  try {
+    const res = await fetch(`/api/odds?type=match&league=${encodeURIComponent(league)}&id=${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error('Gagal');
+    const data = await res.json();
+    currentMatchDetails = data;
+    mcCache[cacheKey] = { time: now, data };
+  } catch {
+    currentMatchDetails = null;
+  }
+  renderActiveTab();
+}
+
+let currentMatchDetails = null;
+
+// Render tampilan per tab
+function renderActiveTab() {
+  const m = currentMatchData;
+  const det = currentMatchDetails;
+  if (!m) return;
+
+  if (activeMcTab === 'info') {
+    const venue = det?.gameInfo?.venue?.fullName || 'Stadion belum ditentukan';
+    const city = det?.gameInfo?.venue?.address?.city ? `, ${det.gameInfo.venue.address.city}` : '';
+    const cap = det?.gameInfo?.venue?.capacity ? ` (${det.gameInfo.venue.capacity.toLocaleString('id-ID')} penonton)` : '';
+    const ref = det?.gameInfo?.officials?.[0]?.displayName || 'Wasit belum dirilis';
+    const kickOff = new Date(m.ts).toLocaleString('id-ID', { timeZone: TZ, dateStyle: 'full', timeStyle: 'short' }) + ' WIB';
+
+    mcContent.innerHTML = `
+      <div class="space-y-3 text-sm">
+        <div class="p-3 bg-white/5 rounded-lg border border-line">
+          <div class="text-xs text-lmute mb-1">Waktu Pertandingan</div>
+          <div class="font-bold text-ink">${kickOff}</div>
+        </div>
+        <div class="p-3 bg-white/5 rounded-lg border border-line">
+          <div class="text-xs text-lmute mb-1">Stadion</div>
+          <div class="font-bold text-ink">${venue}${city}${cap}</div>
+        </div>
+        <div class="p-3 bg-white/5 rounded-lg border border-line">
+          <div class="text-xs text-lmute mb-1">Wasit Utama</div>
+          <div class="font-bold text-ink">${ref}</div>
+        </div>
+        <div class="p-3 bg-white/5 rounded-lg border border-line">
+          <div class="text-xs text-lmute mb-1">Kompetisi</div>
+          <div class="font-bold text-ink">${m.league} (${m.country || 'Internasional'})</div>
+        </div>
+      </div>`;
+  } 
+  else if (activeMcTab === 'summary') {
+    const events = det?.keyEvents || [];
+    if (!events.length) {
+      mcContent.innerHTML = emptyStateHtml('Belum ada ringkasan kejadian pertandingan');
+      return;
+    }
+    mcContent.innerHTML = `<div class="space-y-2">` + events.map(ev => `
+      <div class="flex items-center gap-3 p-2 rounded bg-white/5 border border-line text-xs">
+        <span class="font-bold text-lime w-8 text-right">${ev.clock?.displayValue || ''}</span>
+        <span class="font-semibold text-ink flex-1">${ev.text || ev.type?.text || 'Peristiwa'}</span>
+      </div>
+    `).join('') + `</div>`;
+  } 
+  else if (activeMcTab === 'stats') {
+    const stats = det?.boxscore?.teams;
+    if (!stats || !stats.length) {
+      mcContent.innerHTML = emptyStateHtml('Statistik belum tersedia untuk laga ini');
+      return;
+    }
+    const homeStats = stats[0]?.statistics || [];
+    const awayStats = stats[1]?.statistics || [];
+    if (!homeStats.length) {
+      mcContent.innerHTML = emptyStateHtml('Statistik pertandingan belum dirilis');
+      return;
+    }
+    mcContent.innerHTML = homeStats.map((hs, idx) => {
+      const as = awayStats[idx] || { displayValue: '0' };
+      const hVal = parseFloat(hs.displayValue) || 0;
+      const aVal = parseFloat(as.displayValue) || 0;
+      const total = (hVal + aVal) || 1;
+      const hPct = Math.round((hVal / total) * 100);
+      const aPct = 100 - hPct;
+      return `
+        <div class="stat-row">
+          <div class="stat-labels">
+            <span class="text-blue-400">${hs.displayValue}</span>
+            <span class="text-lmute">${hs.label || hs.name}</span>
+            <span class="text-red-400">${as.displayValue}</span>
+          </div>
+          <div class="stat-bar-track">
+            <div class="stat-bar-home" style="width: ${hPct}%"></div>
+            <div class="stat-bar-away" style="width: ${aPct}%"></div>
+          </div>
+        </div>`;
+    }).join('');
+  } 
+  else if (activeMcTab === 'lineup') {
+    const rosters = det?.rosters;
+    if (!rosters || !rosters.length) {
+      mcContent.innerHTML = emptyStateHtml('Susunan pemain belum dirilis (biasanya 45 menit sebelum laga)');
+      return;
+    }
+    mcContent.innerHTML = `
+      <div class="grid grid-cols-2 gap-4 text-xs">
+        <div>
+          <h4 class="font-bold text-blue-400 mb-2 border-b border-line pb-1">${m.home}</h4>
+          <div class="space-y-1">
+            ${(rosters[0]?.roster || []).map(p => `<div><span class="text-lmute mr-1.5">${p.jersey || ''}</span>${p.athlete?.displayName || p.displayName}</div>`).join('') || '<div class="text-lmute">Belum tersedia</div>'}
+          </div>
+        </div>
+        <div>
+          <h4 class="font-bold text-red-400 mb-2 border-b border-line pb-1">${m.away}</h4>
+          <div class="space-y-1">
+            ${(rosters[1]?.roster || []).map(p => `<div><span class="text-lmute mr-1.5">${p.jersey || ''}</span>${p.athlete?.displayName || p.displayName}</div>`).join('') || '<div class="text-lmute">Belum tersedia</div>'}
+          </div>
+        </div>
+      </div>`;
+  } 
+  else if (activeMcTab === 'standings') {
+    const st = det?.standings?.entries || [];
+    if (!st.length) {
+      mcContent.innerHTML = emptyStateHtml('Klasemen untuk liga ini belum tersedia');
+      return;
+    }
+    mcContent.innerHTML = `
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-left border-collapse">
+          <thead>
+            <tr class="border-b border-line text-lmute">
+              <th class="py-1 px-1.5">#</th>
+              <th class="py-1 px-2">Klub</th>
+              <th class="py-1 px-1 text-center">P</th>
+              <th class="py-1 px-1 text-center">W</th>
+              <th class="py-1 px-1 text-center">D</th>
+              <th class="py-1 px-1 text-center">L</th>
+              <th class="py-1 px-1 text-center">GD</th>
+              <th class="py-1 px-1 text-center font-bold">PTS</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${st.map(r => {
+              const isH = r.team?.displayName === m.home;
+              const isA = r.team?.displayName === m.away;
+              const hl = (isH || isA) ? 'bg-lime/10 text-lime font-bold' : 'hover:bg-white/5';
+              const s = r.stats || [];
+              const val = n => s.find(x => x.name === n)?.displayValue || '0';
+              return `
+                <tr class="border-b border-line/40 ${hl}">
+                  <td class="py-1.5 px-1.5">${r.seed || '-'}</td>
+                  <td class="py-1.5 px-2 truncate max-w-[120px]">${r.team?.displayName || 'Tim'}</td>
+                  <td class="py-1.5 px-1 text-center">${val('gamesPlayed')}</td>
+                  <td class="py-1.5 px-1 text-center">${val('wins')}</td>
+                  <td class="py-1.5 px-1 text-center">${val('ties')}</td>
+                  <td class="py-1.5 px-1 text-center">${val('losses')}</td>
+                  <td class="py-1.5 px-1 text-center">${val('pointDifferential')}</td>
+                  <td class="py-1.5 px-1 text-center font-bold text-ink">${val('points')}</td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } 
+  else if (activeMcTab === 'h2h') {
+    const h2h = det?.lastFiveGames || [];
+    if (!h2h.length) {
+      mcContent.innerHTML = emptyStateHtml('Riwayat pertemuan langsung (H2H) belum tersedia');
+      return;
+    }
+    mcContent.innerHTML = `
+      <div class="space-y-2">
+        <h4 class="text-xs font-bold text-lmute uppercase tracking-wider mb-2">Riwayat Pertandingan Terakhir</h4>
+        ${h2h.map(g => `
+          <div class="p-2.5 rounded bg-white/5 border border-line flex items-center justify-between text-xs">
+            <span class="text-lmute">${g.date ? new Date(g.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' }) : ''}</span>
+            <span class="font-bold text-ink">${g.homeTeam || ''} <span class="text-lime">${g.score || 'vs'}</span> ${g.awayTeam || ''}</span>
+          </div>
+        `).join('')}
+      </div>`;
+  } 
+  else if (activeMcTab === 'odds') {
+    const textToCopy = marketText(m);
+    mcContent.innerHTML = `
+      <div class="space-y-4">
+        <div class="p-3 bg-white/5 rounded-lg border border-line">
+          <div class="text-xs text-lmute mb-2 font-bold uppercase">Pasaran Pertandingan</div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div><span class="text-lmute">Handicap (HDP):</span> <strong class="text-ink">${m.hdp || '-'}</strong></div>
+            <div><span class="text-lmute">Over/Under (O/U):</span> <strong class="text-ink">${m.ou || '-'}</strong></div>
+            <div><span class="text-lmute">Odds Home:</span> <strong class="text-blue-400">${m.oddsHome || '-'}</strong></div>
+            <div><span class="text-lmute">Odds Away:</span> <strong class="text-red-400">${m.oddsAway || '-'}</strong></div>
+          </div>
+        </div>
+        <button type="button" id="copyOddsInsideBtn" class="w-full flex items-center justify-center gap-1.5 py-2.5 px-4 bg-lime text-black font-extrabold rounded-lg hover:brightness-110 active:scale-[0.98] transition">
+          ${SVG_ICONS.copy} Salin Pasaran Ini
+        </button>
+      </div>`;
+
+    document.getElementById('copyOddsInsideBtn')?.addEventListener('click', () => {
+      copyText(textToCopy).then(() => toast('Tersalin: ' + textToCopy));
+    });
+  } 
+  else if (activeMcTab === 'predictor') {
+    const pred = det?.predictor || det?.pickcenter?.[0];
+    if (!pred) {
+      mcContent.innerHTML = emptyStateHtml('Prediksi algoritma belum tersedia untuk pertandingan ini');
+      return;
+    }
+    const homeChance = pred.homeTeamChance || 45;
+    const awayChance = pred.awayTeamChance || 30;
+    const drawChance = 100 - homeChance - awayChance;
+    mcContent.innerHTML = `
+      <div class="p-4 bg-white/5 rounded-lg border border-line text-center space-y-3">
+        <div class="text-xs text-lmute uppercase font-bold tracking-wider">Peluang Kemenangan</div>
+        <div class="flex items-center justify-around py-2">
+          <div><div class="text-xl font-extrabold text-blue-400">${homeChance}%</div><div class="text-xs text-lmute mt-1">${m.home}</div></div>
+          <div><div class="text-xl font-extrabold text-lmute">${drawChance}%</div><div class="text-xs text-lmute mt-1">Seri</div></div>
+          <div><div class="text-xl font-extrabold text-red-400">${awayChance}%</div><div class="text-xs text-lmute mt-1">${m.away}</div></div>
+        </div>
+      </div>`;
+  }
+}
+
+// Buka Dialog Profil & Skuad Klub
+async function openSquad(teamId, teamName, teamLogo, league) {
+  if (mcModal.close) mcModal.close();
+  
+  document.getElementById('sqTeamName').textContent = teamName || 'Klub';
+  document.getElementById('sqLeagueName').textContent = league || '';
+  document.getElementById('sqLogo').src = teamLogo || '';
+  
+  if (sqModal.showModal) sqModal.showModal(); else sqModal.setAttribute('open', '');
+  
+  const cacheKey = `team_${teamId || teamName}`;
+  const now = Date.now();
+  if (sqCache[cacheKey] && (now - sqCache[cacheKey].time < 600000)) {
+    renderSquadData(sqCache[cacheKey].data);
+    return;
+  }
+
+  sqContent.innerHTML = '<div class="mc-empty"><div class="animate-pulse">Memuat daftar pemain…</div></div>';
+
+  try {
+    const res = await fetch(`/api/odds?type=team&id=${encodeURIComponent(teamId || '')}`);
+    if (!res.ok) throw new Error('Gagal');
+    const data = await res.json();
+    sqCache[cacheKey] = { time: now, data };
+    renderSquadData(data);
+  } catch {
+    sqContent.innerHTML = emptyStateHtml('Daftar pemain klub ini belum tersedia.');
+  }
+}
+
+function renderSquadData(data) {
+  const squad = data?.athletes || [];
+  if (!squad.length) {
+    sqContent.innerHTML = emptyStateHtml('Daftar skuad belum tersedia.');
+    return;
+  }
+  
+  // Kelompokkan pemain berdasarkan posisi
+  const groups = {};
+  squad.forEach(p => {
+    const pos = p.position?.name || 'Lainnya';
+    if (!groups[pos]) groups[pos] = [];
+    groups[pos].push(p);
+  });
+
+  sqContent.innerHTML = Object.entries(groups).map(([pos, players]) => `
+    <div class="sq-pos-sec">
+      <div class="sq-pos-title">${pos} (${players.length})</div>
+      <div class="space-y-1">
+        ${players.map(pl => `
+          <div class="sq-player-item">
+            <div class="flex items-center gap-2">
+              <span class="w-6 text-center font-bold text-lime text-xs">${pl.jersey || '-'}</span>
+              <span class="font-semibold text-ink">${pl.displayName}</span>
+            </div>
+            <span class="text-xs text-lmute">${pl.age ? pl.age + ' thn' : ''}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+  
 </script>
 </body>
 </html>
