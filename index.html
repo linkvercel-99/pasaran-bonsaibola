@@ -1018,6 +1018,25 @@ html.dark .mc-badge-d { color: #94a3b8; }
     gap: 8px;
   }
 }
+  #mcMLeague img{width:16px;height:16px;object-fit:contain;display:inline-block;vertical-align:-3px;margin-right:6px;flex-shrink:0}
+.mc-league-badge{max-width:100%}
+.mc-league-badge img{width:16px;height:16px;object-fit:contain;flex-shrink:0}
+.mc-standings-table img{width:20px;height:20px;object-fit:contain;flex-shrink:0;border-radius:9999px}
+.w-2\.5{width:.625rem}.h-2\.5{height:.625rem}.w-3\.5{width:.875rem}.h-3\.5{height:.875rem}
+.w-4{width:1rem}.h-4{height:1rem}.w-5{width:1.25rem}.h-5{height:1.25rem}.w-6{width:1.5rem}.h-6{height:1.5rem}.w-16{width:4rem}
+.flex-wrap{flex-wrap:wrap}.flex-shrink-0{flex-shrink:0}.justify-center{justify-content:center}
+.uppercase{text-transform:uppercase}.tracking-wider{letter-spacing:.05em}
+.px-2\.5{padding-left:.625rem;padding-right:.625rem}.pt-1{padding-top:.25rem}
+.mt-0\.5{margin-top:.125rem}.-mt-0\.5{margin-top:-.125rem}.mr-1\.5{margin-right:.375rem}
+.space-y-1\.5>:not([hidden])~:not([hidden]){margin-top:.375rem}
+.text-\[9px\]{font-size:9px}.max-w-\[130px\]{max-width:130px}
+@media(min-width:640px){.sm\:max-w-\[180px\]{max-width:180px}}
+@media(min-width:768px){.md\:max-w-\[220px\]{max-width:220px}}
+.text-blue-400{color:#60a5fa}.text-red-400{color:#f87171}.text-emerald-500{color:#10b981}.text-amber-500{color:#f59e0b}.text-rose-500{color:#f43f5e}
+.bg-blue-400{background-color:#60a5fa}.bg-line\/20{background-color:rgba(31,61,27,.2)}
+.bg-lime\/10{background-color:rgba(74,222,128,.1)}.bg-lime\/15{background-color:rgba(74,222,128,.15)}.bg-lime\/20{background-color:rgba(74,222,128,.2)}
+.border-lime\/30{border-color:rgba(74,222,128,.3)}.hover\:bg-lime\/20:hover{background-color:rgba(74,222,128,.2)}
+html.dark .text-emerald-500{color:#34d399}html.dark .text-amber-500{color:#fbbf24}html.dark .text-rose-500{color:#fb7185}
 </style>
 </head>
 <body class="min-h-screen view-pasaran">
@@ -1956,7 +1975,8 @@ async function loadMatchDetails(league, eventId) {
     if (data?.leagueLogo) {
       const leagueEl = document.getElementById('mcMLeague');
       if (leagueEl) {
-        leagueEl.innerHTML = `<img src="${data.leagueLogo}" alt="" class="w-3.5 h-3.5 object-contain inline-block -mt-0.5 mr-1.5" onerror="this.style.display='none'">${m.league || data.leagueName || 'Kompetisi'} · ${m.country || 'Sepak Bola'}`;
+        const cm = currentMatchData || {};
+        leagueEl.innerHTML = `<img src="${esc(data.leagueLogo)}" alt="" onerror="this.style.display='none'">${esc(cm.league || data.leagueName || 'Kompetisi')} · ${esc(cm.country || 'Sepak Bola')}`;
       }
     }
   } catch (err) {
