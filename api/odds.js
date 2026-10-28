@@ -333,6 +333,7 @@ async function serveMatchCenter(req, res, allowedLeagues) {
         id,
         league,
         gameInfo: data.gameInfo || null,
+        lastFiveGames: data.lastFiveGames || [],
         header: data.header || null,
         boxscore: data.boxscore || null,
         rosters: data.rosters || [],
