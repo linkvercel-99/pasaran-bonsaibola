@@ -210,16 +210,79 @@ html.dark .lg-tools button{background:#13240f;border-color:#2c4a25;color:#e6f2df
 html.dark .nw-more-btn{background:#13240f;border-color:#2c4a25;color:#e6f2df}
 @media(max-width:639px){#hero{height:5.5rem}.bet-btn{padding:9px 14px;font-size:14px}}
 /* ================= MATCH CENTER & SKUAD MODAL ================= */
-.mc-dialog, .sq-dialog {
-  border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--ink);
-  border-radius: 1rem;
+
+/* Match Center: halaman detail pertandingan penuh */
+.mc-dialog {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
   padding: 0;
-  max-width: 42rem;
-  width: 95vw;
-  max-height: 90vh;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  border: none;
+  border-radius: 0;
+
+  /* Gunakan variabel warna yang memang tersedia */
+  background: var(--lu-surface, #ffffff);
+  color: var(--lu-ink, #1f2d1a);
+
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow: none;
+}
+
+.mc-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+/* Header tetap terlihat saat konten digulir */
+.mc-dialog .mc-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--lu-tint, #d3ebc2);
+  color: var(--lu-ink, #1f2d1a);
+}
+
+/* Konten menggunakan ruang yang tersedia */
+.mc-dialog .mc-content {
+  max-height: none;
+  overflow: visible;
+  padding: 20px;
+}
+
+/* Tab dapat digulir secara horizontal di HP */
+.mc-dialog .mc-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--lu-surface, #ffffff);
+}
+
+/* Penyesuaian layar kecil */
+@media (max-width: 639px) {
+  .mc-dialog .mc-content {
+    padding: 14px;
+  }
+
+  .mc-dialog .mc-team-logo {
+    width: 36px;
+    height: 36px;
+  }
+
+  .mc-dialog .mc-team-name {
+    font-size: 12px;
+    max-width: 110px;
+  }
+}
+
+/* Warna mode gelap */
+html.dark .mc-dialog {
+  background: var(--lu-surface, #13240f);
+  color: var(--lu-ink, #e6f2df);
 }
 .mc-dialog::backdrop, .sq-dialog::backdrop {
   background: rgba(0, 0, 0, 0.7);
