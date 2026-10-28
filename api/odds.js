@@ -2,7 +2,7 @@
 // Dipanggil dari server agar tidak kena CORS di browser. Format output SAMA seperti versi lama.
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/soccer';
-const CACHE_SECONDS = Math.max(30, parseInt(process.env.CACHE_SECONDS, 10) || 300);
+const CACHE_SECONDS = Math.max(600, parseInt(process.env.CACHE_SECONDS, 10) || 600); // 10 menit (600 detik) anti-spam
 const DAYS = 3;         // Hari Ini, Besok, Lusa
 const HISTORY = 3;      // Riwayat: 3 hari sebelumnya
 const CONCURRENCY = 10;
@@ -116,6 +116,7 @@ function mapEvent(ev, cfg, order) {
   return {
     id: 'espn-' + ev.id, eventId: String(ev.id), leagueCode: cfg.keys[0], league: cfg.name, country: cfg.country, group: cfg.group, order,
     ts: Date.parse(ev.date), home: (home.team || {}).displayName || '-', away: (away.team || {}).displayName || '-',
+    homeId: (home.team || {}).id || '', awayId: (away.team || {}).id || '',
     homeLogo: (home.team || {}).logo || '', awayLogo: (away.team || {}).logo || '',
     side, hdp, ou, odds: odds.some(Boolean) ? odds : [0, 0, 0],
     st, score: t.state === 'pre' ? null : [home.score, away.score]
@@ -183,7 +184,7 @@ function mockPayload(reason) {
   const events = MOCK.map((r, i) => {
     const order = LEAGUES.findIndex(c => c.name === r[1]), cfg = LEAGUES[order] || { country: '', group: 'Lainnya' };
     return {
-      id: 'mock-' + i, league: r[1], country: cfg.country, group: cfg.group, order,
+      id: 'mock-' + i, eventId: 'mock-' + i, leagueCode: cfg.keys?.[0] || 'eng.1', league: r[1], country: cfg.country, group: cfg.group, order,
       ts: Date.parse(`${dayOf(r[0])}T${r[2]}:00+07:00`), home: r[3], away: r[4],
       homeLogo: '', awayLogo: '', side: r[5], hdp: r[6], ou: r[7], odds: [r[8], r[9], r[10]]
     };
@@ -191,10 +192,7 @@ function mockPayload(reason) {
   return { source: 'mock', notice: reason + ' Menampilkan data contoh.', updatedAt: new Date().toISOString(), events };
 }
 
-
-/* ---------- BERITA (liga top dunia, Bahasa Indonesia) ----------
-   Panggil: GET /api/odds?type=news
-   Output: { source, updatedAt, articles:[{ id, league, headline, description, published, links, images:[{url,width,height}] }] } */
+/* ---------- BERITA (liga top dunia, Bahasa Indonesia) ---------- */
 const NEWS_LEAGUES = [
   ['eng.1', 'Premier League'], ['esp.1', 'La Liga'], ['ita.1', 'Serie A'],
   ['ger.1', 'Bundesliga'], ['fra.1', 'Ligue 1'], ['uefa.champions', 'Champions League']
@@ -247,16 +245,12 @@ async function fetchNews() {
   return top;
 }
 
-/* ---------- ARTIKEL LENGKAP (isi berita per artikel, untuk popup) ----------
-   Panggil: GET /api/odds?type=article&id=<id berita>&league=<nama liga>
-   Output: { source, updatedAt, article:{ id, headline, story, link } } */
+/* ---------- ARTIKEL LENGKAP ---------- */
 async function fetchArticle(id) {
-  // Endpoint konten ESPN: mengembalikan isi artikel lengkap (story)
   const r = await fetch(`https://now.core.api.espn.com/v1/sports/news/${encodeURIComponent(id)}`, { headers: { Accept: 'application/json' } });
   if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
   const j = await r.json();
   const a = ((j.headlines || [])[0]) || {};
-  // Isi berita (story) berupa HTML -> buang tag, rapikan spasi, lalu terjemahkan
   let story = String(a.story || a.description || '')
     .replace(/<br\s*\/?\s*>/gi, '\n').replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
     .replace(/<[^>]*>/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n\s+/g, '\n').trim();
@@ -264,7 +258,7 @@ async function fetchArticle(id) {
   return { id: String(id), headline, story: storyID, link: ((a.links || {}).web || {}).href || '' };
 }
 
-// Shared with the two-file standalone export; uses only Web APIs.
+/* ---------- SUSUNAN PEMAIN (LINEUP) LAMA TETAP ADA ---------- */
 const LINEUP_WAIT = 'Susunan pemain belum dirilis resmi (biasanya diumumkan 45–60 menit sebelum kick-off).';
 
 function lineupName(value) {
@@ -307,7 +301,7 @@ async function serveLineup(req, res, allowedLeagues) {
       throw new Error('HTTP ' + response.status);
     }
     const payload = mapLineup(await response.json());
-    res.setHeader('Cache-Control', 'public, s-maxage=90, stale-while-revalidate=60');
+    res.setHeader('Cache-Control', `public, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=60`);
     return res.status(200).json({ source: 'espn', league, id, updatedAt: new Date().toISOString(), ...payload });
   } catch {
     res.setHeader('Cache-Control', 'no-store');
@@ -315,6 +309,72 @@ async function serveLineup(req, res, allowedLeagues) {
   }
 }
 
+/* ---------- MATCH CENTER LENGKAP (8 TAB) ---------- */
+async function serveMatchCenter(req, res, allowedLeagues) {
+  const league = req.query?.league || 'eng.1';
+  const id = req.query?.id;
+  if (!id || !/^\d{1,12}$/.test(id)) {
+    return res.status(400).json({ error: 'ID pertandingan tidak valid.' });
+  }
+  try {
+    const response = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${encodeURIComponent(league)}/summary?event=${encodeURIComponent(id)}`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) {
+      return reply(res, { source: 'espn', available: false, message: 'Data pertandingan belum tersedia di ESPN.' }, 60);
+    }
+    const data = await response.json();
+    return reply(res, {
+      source: 'espn',
+      available: true,
+      updatedAt: new Date().toISOString(),
+      match: {
+        id,
+        league,
+        gameInfo: data.gameInfo || null,
+        header: data.header || null,
+        boxscore: data.boxscore || null,
+        rosters: data.rosters || [],
+        standings: data.standings || null,
+        predictor: data.predictor || null,
+        pickcenter: data.pickcenter || null,
+        plays: data.plays || data.keyEvents || [],
+        lineup: mapLineup(data)
+      }
+    }, CACHE_SECONDS);
+  } catch (e) {
+    return reply(res, { source: 'error', available: false, message: 'Data pertandingan belum dapat dimuat saat ini.' }, 60);
+  }
+}
+
+/* ---------- SKUAD KLUB ---------- */
+async function serveTeamSquad(req, res, allowedLeagues) {
+  const league = req.query?.league || 'eng.1';
+  const teamId = req.query?.teamId || req.query?.id;
+  if (!teamId || !/^\d{1,12}$/.test(teamId)) {
+    return res.status(400).json({ error: 'ID klub tidak valid.' });
+  }
+  try {
+    const response = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${encodeURIComponent(league)}/teams/${encodeURIComponent(teamId)}/roster`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) {
+      return reply(res, { source: 'espn', available: false, message: 'Data skuad belum tersedia.' }, 60);
+    }
+    const data = await response.json();
+    return reply(res, {
+      source: 'espn',
+      available: true,
+      updatedAt: new Date().toISOString(),
+      team: data.team || {},
+      athletes: data.athletes || []
+    }, CACHE_SECONDS);
+  } catch (e) {
+    return reply(res, { source: 'error', available: false, message: 'Data skuad belum dapat dimuat saat ini.' }, 60);
+  }
+}
 
 /* ---------- Handler ---------- */
 function reply(res, payload, seconds) {
@@ -327,7 +387,25 @@ module.exports = async function handler(req, res) {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method not allowed' });
   }
-  if (req.query && req.query.type === 'lineup') return serveLineup(req, res, LEAGUES.flatMap(l => l.keys));
+
+  const allowedLeagues = LEAGUES.flatMap(l => l.keys);
+
+  // 1. Endpoint Match Center 8 Tab
+  if (req.query && req.query.type === 'match') {
+    return serveMatchCenter(req, res, allowedLeagues);
+  }
+
+  // 2. Endpoint Skuad Klub
+  if (req.query && req.query.type === 'team') {
+    return serveTeamSquad(req, res, allowedLeagues);
+  }
+
+  // 3. Endpoint Line Up
+  if (req.query && req.query.type === 'lineup') {
+    return serveLineup(req, res, allowedLeagues);
+  }
+
+  // 4. Endpoint Artikel Berita Lengkap
   if (req.query && req.query.type === 'article') {
     const id = String(req.query.id || '').trim();
     if (!/^\d{4,12}$/.test(id)) return res.status(400).json({ error: 'id berita tidak valid' });
@@ -339,15 +417,19 @@ module.exports = async function handler(req, res) {
       return reply(res, { source: 'error', notice: errorText(e), updatedAt: new Date().toISOString(), article: null }, 60);
     }
   }
+
+  // 5. Endpoint Daftar Berita
   if (req.query && req.query.type === 'news') {
     try {
       const articles = await fetchNews();
-      return reply(res, { source: 'espn', updatedAt: new Date().toISOString(), articles }, 900);
+      return reply(res, { source: 'espn', updatedAt: new Date().toISOString(), articles }, CACHE_SECONDS);
     } catch (e) {
       console.error('espn news error:', e.message);
       return reply(res, { source: 'error', notice: errorText(e), updatedAt: new Date().toISOString(), articles: [] }, 60);
     }
   }
+
+  // 6. Endpoint Utama: Pasaran & Jadwal Pertandingan
   try {
     const { events, failed } = await fetchLive();
     if (!events.length) return reply(res, mockPayload('Tidak ada pertandingan terjadwal dari ESPN.'), 300);
