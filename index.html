@@ -1113,16 +1113,16 @@ const sqModal = document.getElementById('sqModal');
 const mcContent = document.getElementById('mcContent');
 const sqContent = document.getElementById('sqContent');
 
-// Cache memori browser 10 menit (agar klik bolak-balik instan 0 detik)
+// Cache browser 10 menit (agar buka bolak-balik instan 0 detik)
 const mcCache = {};
 const sqCache = {};
 let currentMatchData = null;
 let currentMatchLeague = '';
 let activeMcTab = 'info';
+let currentMatchDetails = null;
 
-// SVG Ikon bersih profesional (tanpa emoji)
+// SVG Ikon bersih & profesional (tanpa emoji)
 const SVG_ICONS = {
-  info: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inline-block mr-1"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>',
   empty: '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto mb-2 text-lmute"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>',
   copy: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inline-block mr-1.5"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>'
 };
@@ -1135,32 +1135,39 @@ function emptyStateHtml(msg = 'Data belum tersedia untuk pertandingan ini') {
   </div>`;
 }
 
-// Buka Match Center saat baris laga diklik
+// Buka Match Center saat baris pertandingan diklik
 async function openMatchCenter(id) {
   const m = state.all.find(x => String(x.id) === String(id));
   if (!m) return;
 
   currentMatchData = m;
-  const leagueObj = LEAGUES.find(l => l.name === m.league);
-  currentMatchLeague = leagueObj ? leagueObj.keys[0] : 'eng.1';
+  const eventId = m.eventId || String(m.id).replace(/^espn-/, '');
+  currentMatchLeague = m.leagueCode || 'eng.1'; // Menggunakan leagueCode bawaan data tanpa butuh LEAGUES
 
   // Isi Header Match Center
-  document.getElementById('mcMLeague').textContent = `${m.league} · ${m.country || ''}`;
-  document.getElementById('mcHomeName').textContent = m.home;
-  document.getElementById('mcAwayName').textContent = m.away;
-  document.getElementById('mcHomeLogo').src = m.homeLogo || '';
-  document.getElementById('mcAwayLogo').src = m.awayLogo || '';
+  const leagueEl = document.getElementById('mcMLeague');
+  if (leagueEl) leagueEl.textContent = `${m.league || ''} · ${m.country || ''}`;
+  const homeNameEl = document.getElementById('mcHomeName');
+  if (homeNameEl) homeNameEl.textContent = m.home || 'Home';
+  const awayNameEl = document.getElementById('mcAwayName');
+  if (awayNameEl) awayNameEl.textContent = m.away || 'Away';
+  const homeLogoEl = document.getElementById('mcHomeLogo');
+  if (homeLogoEl) homeLogoEl.src = m.homeLogo || '';
+  const awayLogoEl = document.getElementById('mcAwayLogo');
+  if (awayLogoEl) awayLogoEl.src = m.awayLogo || '';
 
   const sc = m.score && m.score[0] != null && m.score[0] !== '' ? `${m.score[0]} - ${m.score[1]}` : 'VS';
-  document.getElementById('mcScore').textContent = sc;
-  document.getElementById('mcStatus').textContent = m.statusText || (m.live ? 'LIVE' : fmtTime(m.ts));
+  const scoreEl = document.getElementById('mcScore');
+  if (scoreEl) scoreEl.textContent = sc;
+  const statusEl = document.getElementById('mcStatus');
+  if (statusEl) statusEl.textContent = m.statusText || (m.live ? 'LIVE' : fmtTime(m.ts));
 
   // Reset tab ke Info
   setMcTab('info');
   if (mcModal.showModal) mcModal.showModal(); else mcModal.setAttribute('open', '');
 
   // Muat data detail dengan cache 10 menit
-  await loadMatchDetails(currentMatchLeague, m.id);
+  await loadMatchDetails(currentMatchLeague, eventId);
 }
 
 // Navigasi 8 Tab
@@ -1172,13 +1179,13 @@ function setMcTab(tab) {
   renderActiveTab();
 }
 
-// Event delegasi klik tab di Match Center
+// Event klik tab
 document.querySelector('.mc-tabs')?.addEventListener('click', e => {
   const btn = e.target.closest('.mc-tab-btn');
   if (btn) setMcTab(btn.dataset.mctab);
 });
 
-// Tutup dialog Match Center & Skuad
+// Tutup dialog via tombol ✕
 document.getElementById('mcClose')?.addEventListener('click', () => {
   if (mcModal.close) mcModal.close(); else mcModal.removeAttribute('open');
 });
@@ -1186,12 +1193,26 @@ document.getElementById('sqClose')?.addEventListener('click', () => {
   if (sqModal.close) sqModal.close(); else sqModal.removeAttribute('open');
 });
 
+// Tutup dialog saat klik di luar kotak (backdrop)
+mcModal?.addEventListener('click', e => {
+  const r = mcModal.getBoundingClientRect();
+  if (e.target === mcModal && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) {
+    if (mcModal.close) mcModal.close(); else mcModal.removeAttribute('open');
+  }
+});
+sqModal?.addEventListener('click', e => {
+  const r = sqModal.getBoundingClientRect();
+  if (e.target === sqModal && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) {
+    if (sqModal.close) sqModal.close(); else sqModal.removeAttribute('open');
+  }
+});
+
 // Klik logo tim di Match Center -> Buka Skuad Klub
 document.getElementById('mcHomeBtn')?.addEventListener('click', () => {
-  if (currentMatchData) openSquad(currentMatchData.homeId, currentMatchData.home, currentMatchData.homeLogo, currentMatchData.league);
+  if (currentMatchData) openSquad(currentMatchData.homeId, currentMatchData.home, currentMatchData.homeLogo, currentMatchData.league, currentMatchLeague);
 });
 document.getElementById('mcAwayBtn')?.addEventListener('click', () => {
-  if (currentMatchData) openSquad(currentMatchData.awayId, currentMatchData.away, currentMatchData.awayLogo, currentMatchData.league);
+  if (currentMatchData) openSquad(currentMatchData.awayId, currentMatchData.away, currentMatchData.awayLogo, currentMatchData.league, currentMatchLeague);
 });
 
 // Tombol Kembali di Skuad Klub -> Balik ke Match Center
@@ -1201,8 +1222,8 @@ document.getElementById('sqBack')?.addEventListener('click', () => {
 });
 
 // Ambil detail data dari API dengan Cache 10 Menit (600.000 ms)
-async function loadMatchDetails(league, id) {
-  const cacheKey = `${league}_${id}`;
+async function loadMatchDetails(league, eventId) {
+  const cacheKey = `${league}_${eventId}`;
   const now = Date.now();
 
   if (mcCache[cacheKey] && (now - mcCache[cacheKey].time < 600000)) {
@@ -1211,21 +1232,20 @@ async function loadMatchDetails(league, id) {
     return;
   }
 
-  mcContent.innerHTML = '<div class="mc-empty"><div class="animate-pulse">Memuat data pertandingan…</div></div>';
+  mcContent.innerHTML = '<div class="mc-empty"><div class="animate-pulse font-semibold">Memuat data pertandingan…</div></div>';
 
   try {
-    const res = await fetch(`/api/odds?type=match&league=${encodeURIComponent(league)}&id=${encodeURIComponent(id)}`);
+    const res = await fetch(`/api/odds?type=match&league=${encodeURIComponent(league)}&id=${encodeURIComponent(eventId)}`);
     if (!res.ok) throw new Error('Gagal');
-    const data = await res.json();
+    const json = await res.json();
+    const data = json.match || json;
     currentMatchDetails = data;
     mcCache[cacheKey] = { time: now, data };
-  } catch {
+  } catch (err) {
     currentMatchDetails = null;
   }
   renderActiveTab();
 }
-
-let currentMatchDetails = null;
 
 // Render tampilan per tab
 function renderActiveTab() {
@@ -1243,7 +1263,7 @@ function renderActiveTab() {
     mcContent.innerHTML = `
       <div class="space-y-3 text-sm">
         <div class="p-3 bg-white/5 rounded-lg border border-line">
-          <div class="text-xs text-lmute mb-1">Waktu Pertandingan</div>
+          <div class="text-xs text-lmute mb-1">Waktu Kick-Off</div>
           <div class="font-bold text-ink">${kickOff}</div>
         </div>
         <div class="p-3 bg-white/5 rounded-lg border border-line">
@@ -1261,14 +1281,14 @@ function renderActiveTab() {
       </div>`;
   } 
   else if (activeMcTab === 'summary') {
-    const events = det?.keyEvents || [];
+    const events = det?.plays || det?.keyEvents || [];
     if (!events.length) {
       mcContent.innerHTML = emptyStateHtml('Belum ada ringkasan kejadian pertandingan');
       return;
     }
     mcContent.innerHTML = `<div class="space-y-2">` + events.map(ev => `
       <div class="flex items-center gap-3 p-2 rounded bg-white/5 border border-line text-xs">
-        <span class="font-bold text-lime w-8 text-right">${ev.clock?.displayValue || ''}</span>
+        <span class="font-bold text-lime w-10 text-right">${ev.clock?.displayValue || ev.time || ''}</span>
         <span class="font-semibold text-ink flex-1">${ev.text || ev.type?.text || 'Peristiwa'}</span>
       </div>
     `).join('') + `</div>`;
@@ -1295,9 +1315,9 @@ function renderActiveTab() {
       return `
         <div class="stat-row">
           <div class="stat-labels">
-            <span class="text-blue-400">${hs.displayValue}</span>
+            <span class="text-blue-400 font-bold">${hs.displayValue}</span>
             <span class="text-lmute">${hs.label || hs.name}</span>
-            <span class="text-red-400">${as.displayValue}</span>
+            <span class="text-red-400 font-bold">${as.displayValue}</span>
           </div>
           <div class="stat-bar-track">
             <div class="stat-bar-home" style="width: ${hPct}%"></div>
@@ -1307,9 +1327,13 @@ function renderActiveTab() {
     }).join('');
   } 
   else if (activeMcTab === 'lineup') {
+    if (det?.lineup?.available && typeof luView === 'function') {
+      mcContent.innerHTML = luView(det.lineup.teams || []);
+      return;
+    }
     const rosters = det?.rosters;
     if (!rosters || !rosters.length) {
-      mcContent.innerHTML = emptyStateHtml('Susunan pemain belum dirilis (biasanya 45 menit sebelum laga)');
+      mcContent.innerHTML = emptyStateHtml('Susunan pemain belum resmi dirilis (biasanya 45-60 menit sebelum laga)');
       return;
     }
     mcContent.innerHTML = `
@@ -1329,7 +1353,7 @@ function renderActiveTab() {
       </div>`;
   } 
   else if (activeMcTab === 'standings') {
-    const st = det?.standings?.entries || [];
+    const st = det?.standings?.entries || det?.standings?.groups?.[0]?.standings?.entries || [];
     if (!st.length) {
       mcContent.innerHTML = emptyStateHtml('Klasemen untuk liga ini belum tersedia');
       return;
@@ -1373,18 +1397,28 @@ function renderActiveTab() {
       </div>`;
   } 
   else if (activeMcTab === 'h2h') {
-    const h2h = det?.lastFiveGames || [];
-    if (!h2h.length) {
+    const lastFive = det?.lastFiveGames || [];
+    if (!lastFive.length) {
       mcContent.innerHTML = emptyStateHtml('Riwayat pertemuan langsung (H2H) belum tersedia');
       return;
     }
     mcContent.innerHTML = `
-      <div class="space-y-2">
-        <h4 class="text-xs font-bold text-lmute uppercase tracking-wider mb-2">Riwayat Pertandingan Terakhir</h4>
-        ${h2h.map(g => `
-          <div class="p-2.5 rounded bg-white/5 border border-line flex items-center justify-between text-xs">
-            <span class="text-lmute">${g.date ? new Date(g.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' }) : ''}</span>
-            <span class="font-bold text-ink">${g.homeTeam || ''} <span class="text-lime">${g.score || 'vs'}</span> ${g.awayTeam || ''}</span>
+      <div class="space-y-4">
+        ${lastFive.map(teamBlock => `
+          <div>
+            <h4 class="text-xs font-bold text-ink mb-2">${teamBlock.team?.displayName || 'Tim'} — 5 Pertandingan Terakhir</h4>
+            <div class="space-y-1.5">
+              ${(teamBlock.events || []).map(g => {
+                const resColor = g.gameResult === 'W' ? 'bg-green-500/20 text-green-400 border-green-500/30' : (g.gameResult === 'L' ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-white/10 text-lmute border-white/20');
+                const dStr = g.gameDate ? new Date(g.gameDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : '';
+                return `
+                  <div class="p-2 rounded bg-white/5 border border-line flex items-center justify-between text-xs">
+                    <span class="text-lmute w-14 shrink-0">${dStr}</span>
+                    <span class="truncate flex-1 font-semibold">${g.opponent?.displayName || 'Lawan'}</span>
+                    <span class="font-bold px-2 py-0.5 rounded text-[11px] border ${resColor}">${g.gameResult || ''} ${g.score || ''}</span>
+                  </div>`;
+              }).join('')}
+            </div>
           </div>
         `).join('')}
       </div>`;
@@ -1433,11 +1467,11 @@ function renderActiveTab() {
 }
 
 // Buka Dialog Profil & Skuad Klub
-async function openSquad(teamId, teamName, teamLogo, league) {
-  if (mcModal.close) mcModal.close();
+async function openSquad(teamId, teamName, teamLogo, leagueName, leagueCode) {
+  if (mcModal && mcModal.open) mcModal.close();
   
   document.getElementById('sqTeamName').textContent = teamName || 'Klub';
-  document.getElementById('sqLeagueName').textContent = league || '';
+  document.getElementById('sqLeagueName').textContent = leagueName || '';
   document.getElementById('sqLogo').src = teamLogo || '';
   
   if (sqModal.showModal) sqModal.showModal(); else sqModal.setAttribute('open', '');
@@ -1449,10 +1483,11 @@ async function openSquad(teamId, teamName, teamLogo, league) {
     return;
   }
 
-  sqContent.innerHTML = '<div class="mc-empty"><div class="animate-pulse">Memuat daftar pemain…</div></div>';
+  sqContent.innerHTML = '<div class="mc-empty"><div class="animate-pulse font-semibold">Memuat daftar pemain…</div></div>';
 
   try {
-    const res = await fetch(`/api/odds?type=team&id=${encodeURIComponent(teamId || '')}`);
+    const lg = leagueCode || currentMatchLeague || 'eng.1';
+    const res = await fetch(`/api/odds?type=team&league=${encodeURIComponent(lg)}&id=${encodeURIComponent(teamId || '')}`);
     if (!res.ok) throw new Error('Gagal');
     const data = await res.json();
     sqCache[cacheKey] = { time: now, data };
